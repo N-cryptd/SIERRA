@@ -8,6 +8,7 @@ Survival Intelligence Environment for Resource Research and Adaptation
 - Grid-based navigation environment with multi-resource management (food, water, materials)
 - Dynamic environmental conditions (day/night cycles, weather patterns, seasons)
 - Threat and hazard system with avoidance mechanics
+- **Crafting mechanics for creating tools, shelter, or other essential items**
 - Reinforcement learning agent implementation with observation and action spaces
 - Training framework with configurable hyperparameters
 - Visualization system for game states and agent performance
@@ -165,6 +166,9 @@ graph TD
 - **Containerization**: Docker
 
 ## Implementation Roadmap
+
+The development will follow an iterative process, visualized below. The following sequential milestones represent the primary focus within these iterative development cycles.
+
 ```mermaid
 graph LR
     %% Title: Deep RL Development Cycle - Iterative Process for Resource Survival Game
@@ -340,6 +344,7 @@ graph TD
 ### Cost Estimation (Monthly)
 
 - Local development: Hardware depreciation + electricity (~$30/month)
+- Cloud GPU training (optional): $100-300/month depending on instance type and usage
 
 ## Documentation Strategy
 
