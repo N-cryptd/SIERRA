@@ -5,6 +5,14 @@ import random
 from .grid import create_grid, place_entity, check_boundaries, get_cell_content, EMPTY, AGENT, RESOURCE
 from .entities import Agent, Resource
 
+# Environmental Constants
+DAY_LENGTH = 100
+NIGHT_LENGTH = 50
+WEATHER_TYPES = ['clear', 'rainy', 'cloudy']
+SEASON_TYPES = ['spring', 'summer', 'autumn', 'winter']
+WEATHER_TRANSITION_STEPS = 200
+SEASON_TRANSITION_STEPS = 1000
+
 class SierraEnv(gym.Env):
     """A simple grid world environment for the SIERRA project."""
 
@@ -15,14 +23,16 @@ class SierraEnv(gym.Env):
         self.grid_height = grid_height
         self.grid = create_grid(self.grid_width, self.grid_height)
 
-        # Define observation space (grid state)
-        # Define observation space (agent and resource positions)
+        # Define observation space
         self.observation_space = gym.spaces.Dict({
             "agent_pos": gym.spaces.Box(low=np.array([0, 0]), high=np.array([self.grid_width - 1, self.grid_height - 1]), dtype=int),
             "food_locs": gym.spaces.Box(low=np.array([[-1, -1] for _ in range(2)]), high=np.array([[self.grid_width - 1, self.grid_height - 1] for _ in range(2)]), dtype=int),
             "water_locs": gym.spaces.Box(low=np.array([[-1, -1] for _ in range(1)]), high=np.array([[self.grid_width - 1, self.grid_height - 1] for _ in range(1)]), dtype=int),
             "hunger": gym.spaces.Box(low=0, high=100, shape=(1,), dtype=np.float32),
             "thirst": gym.spaces.Box(low=0, high=100, shape=(1,), dtype=np.float32),
+            "time_of_day": gym.spaces.Discrete(2), # 0 for Night, 1 for Day
+            "current_weather": gym.spaces.Discrete(len(WEATHER_TYPES)),
+            "current_season": gym.spaces.Discrete(len(SEASON_TYPES)),
         })
 
         # Define action space (0: up, 1: down, 2: left, 3: right)
@@ -31,8 +41,21 @@ class SierraEnv(gym.Env):
         self.agent = None
         self.resources = []
 
+        # Initialize environmental state
+        self.world_time = 0
+        self.is_day = True # Start during the day
+        self.current_weather = self.np_random.choice(WEATHER_TYPES)
+        self.current_season = self.np_random.choice(SEASON_TYPES)
+
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+
+        # Reset environmental state
+        self.world_time = 0
+        self.is_day = True # Start during the day
+        self.current_weather = self.np_random.choice(WEATHER_TYPES)
+        self.current_season = self.np_random.choice(SEASON_TYPES)
 
         # Reset grid
         self.grid = create_grid(self.grid_width, self.grid_height)
@@ -64,6 +87,9 @@ class SierraEnv(gym.Env):
             "water_locs": np.array([[-1, -1]] * 1, dtype=int),
             "hunger": np.array([self.agent.hunger], dtype=np.float32),
             "thirst": np.array([self.agent.thirst], dtype=np.float32),
+            "time_of_day": int(self.is_day),
+            "current_weather": WEATHER_TYPES.index(self.current_weather),
+            "current_season": SEASON_TYPES.index(self.current_season),
         }
 
         food_count = 0
@@ -105,8 +131,16 @@ class SierraEnv(gym.Env):
         info = {}
 
         # Decrement agent needs
-        self.agent.hunger -= 0.1
-        self.agent.thirst -= 0.1
+        hunger_decay = 0.1
+        thirst_decay = 0.1
+
+        # Slightly increase decay during night
+        if not self.is_day:
+            hunger_decay *= 1.2
+            thirst_decay *= 1.2
+
+        self.agent.hunger -= hunger_decay
+        self.agent.thirst -= thirst_decay
 
         # Check for boundary collision
         if check_boundaries(self.grid, new_x, new_y):
@@ -150,6 +184,20 @@ class SierraEnv(gym.Env):
             terminated = True
             reward -= 1.0 # Large penalty for death
 
+        # Update environmental state
+        self.world_time += 1
+        cycle_time = DAY_LENGTH + NIGHT_LENGTH
+        self.is_day = (self.world_time % cycle_time) < DAY_LENGTH
+
+        # Basic weather transition
+        if self.world_time % WEATHER_TRANSITION_STEPS == 0:
+             self.current_weather = self.np_random.choice(WEATHER_TYPES)
+
+        # Basic season transition
+        if self.world_time % SEASON_TRANSITION_STEPS == 0:
+             self.current_season = self.np_random.choice(SEASON_TYPES)
+
+
         # Prepare observation
         food_locs = [(-1, -1)] * 2
         water_locs = [(-1, -1)] * 1
@@ -170,6 +218,9 @@ class SierraEnv(gym.Env):
             "water_locs": np.array(water_locs, dtype=int),
             "hunger": np.array([self.agent.hunger], dtype=np.float32),
             "thirst": np.array([self.agent.thirst], dtype=np.float32),
+            "time_of_day": int(self.is_day),
+            "current_weather": WEATHER_TYPES.index(self.current_weather),
+            "current_season": SEASON_TYPES.index(self.current_season),
         }
 
         return observation, reward, terminated, truncated, info

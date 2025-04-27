@@ -42,6 +42,18 @@ for step in range(num_steps):
                  print(f"  Resource Location: {resource_obs}")
             else: # Multiple resources (e.g., array([[x1, y1], [x2, y2]]))
                  print(f"  Resource Locations: {resource_obs}")
+
+        # Print dynamic environment states
+        time_of_day = observation.get('time_of_day')
+        current_weather = observation.get('current_weather')
+        current_season = observation.get('current_season')
+
+        if time_of_day is not None:
+            print(f"  Time of Day: {time_of_day}")
+        if current_weather is not None:
+            print(f"  Current Weather: {current_weather}")
+        if current_season is not None:
+            print(f"  Current Season: {current_season}")
     else:
         print(f"  Observation: {observation}")
 
