@@ -5,3 +5,5 @@ dev_guidelines.md
 __pycache__
 *.pyc
 .env
+/sierra_tensorboard/
+/trained_models/
