@@ -313,6 +313,23 @@ graph TD
 - Reward signal validation
 
 
+## RL Algorithm Comparison
+
+Comparative experiments were conducted to evaluate the performance of PPO and DQN algorithms on the SIERRA environment. The key evaluation metrics are summarized below:
+
+*   **PPO Model:**
+    *   Mean Episode Reward: -21.28 +/- 2.91
+    *   Mean Episode Length: 946.83
+*   **DQN Model:**
+    *   Mean Episode Reward: -42.81 +/- 11.10
+    *   Mean Episode Length: 949.49
+
+**Interpretation:**
+
+The PPO model demonstrated significantly better performance compared to the DQN model, achieving a higher mean episode reward and a lower standard deviation, indicating more stable and successful learning. The mean episode lengths were comparable for both algorithms.
+
+It's worth noting that the SAC algorithm was also considered but was found to be incompatible with the current discrete action space of the SIERRA environment.
+
 ## User Interface Framework
 
 ### Component Specifications

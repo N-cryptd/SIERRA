@@ -26,7 +26,14 @@ def evaluate_model(model_path, num_episodes=100):
 
     print(f"Loading model from {model_path}")
     try:
-        model = PPO.load(model_path, env=env)
+        if "ppo" in model_path.lower():
+            model = PPO.load(model_path, env=env)
+        elif "dqn" in model_path.lower():
+            from stable_baselines3 import DQN
+            model = DQN.load(model_path, env=env)
+        else:
+            print(f"Error: Unknown model type in path: {model_path}")
+            return
     except Exception as e:
         print(f"Error loading model: {e}")
         return
