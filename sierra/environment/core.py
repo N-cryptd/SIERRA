@@ -18,8 +18,11 @@ class SierraEnv(gym.Env):
         # Define observation space (grid state)
         # Define observation space (agent and resource positions)
         self.observation_space = gym.spaces.Dict({
-            "agent": gym.spaces.Box(low=np.array([0, 0]), high=np.array([self.grid_width - 1, self.grid_height - 1]), dtype=int),
-            "resource": gym.spaces.Box(low=np.array([0, 0]), high=np.array([self.grid_width - 1, self.grid_height - 1]), dtype=int),
+            "agent_pos": gym.spaces.Box(low=np.array([0, 0]), high=np.array([self.grid_width - 1, self.grid_height - 1]), dtype=int),
+            "food_locs": gym.spaces.Box(low=np.array([[-1, -1] for _ in range(2)]), high=np.array([[self.grid_width - 1, self.grid_height - 1] for _ in range(2)]), dtype=int),
+            "water_locs": gym.spaces.Box(low=np.array([[-1, -1] for _ in range(1)]), high=np.array([[self.grid_width - 1, self.grid_height - 1] for _ in range(1)]), dtype=int),
+            "hunger": gym.spaces.Box(low=0, high=100, shape=(1,), dtype=np.float32),
+            "thirst": gym.spaces.Box(low=0, high=100, shape=(1,), dtype=np.float32),
         })
 
         # Define action space (0: up, 1: down, 2: left, 3: right)
@@ -40,18 +43,39 @@ class SierraEnv(gym.Env):
         self.agent = Agent(agent_x, agent_y, energy=100) # Initialize agent with energy
         place_entity(self.grid, self.agent, AGENT)
 
-        # Place one resource randomly (ensure it's not on the agent's initial position)
-        resource_x, resource_y = agent_x, agent_y
-        while resource_x == agent_x and resource_y == agent_y:
-            resource_x = self.np_random.integers(0, self.grid_width)
-            resource_y = self.np_random.integers(0, self.grid_height)
-        self.resources = [Resource(resource_x, resource_y)]
-        place_entity(self.grid, self.resources[0], RESOURCE)
+        # Place resources randomly (ensure no overlap with agent or other resources)
+        self.resources = []
+        resource_types = ['food'] * 2 + ['water'] * 1
+
+        for res_type in resource_types:
+            placed = False
+            while not placed:
+                res_x = self.np_random.integers(0, self.grid_width)
+                res_y = self.np_random.integers(0, self.grid_height)
+                if get_cell_content(self.grid, res_x, res_y) == EMPTY:
+                    new_resource = Resource(res_x, res_y, type=res_type)
+                    self.resources.append(new_resource)
+                    place_entity(self.grid, new_resource, RESOURCE)
+                    placed = True
 
         observation = {
-            "agent": np.array([self.agent.x, self.agent.y], dtype=int),
-            "resource": np.array([self.resources[0].x, self.resources[0].y], dtype=int) if self.resources else np.array([-1, -1], dtype=int), # Use -1, -1 if no resource
+            "agent_pos": np.array([self.agent.x, self.agent.y], dtype=int),
+            "food_locs": np.array([[-1, -1]] * 2, dtype=int),
+            "water_locs": np.array([[-1, -1]] * 1, dtype=int),
+            "hunger": np.array([self.agent.hunger], dtype=np.float32),
+            "thirst": np.array([self.agent.thirst], dtype=np.float32),
         }
+
+        food_count = 0
+        water_count = 0
+        for res in self.resources:
+            if res.type == 'food' and food_count < 2:
+                observation["food_locs"][food_count] = [res.x, res.y]
+                food_count += 1
+            elif res.type == 'water' and water_count < 1:
+                observation["water_locs"][water_count] = [res.x, res.y]
+                water_count += 1
+
         info = {}
 
         return observation, info
@@ -80,21 +104,35 @@ class SierraEnv(gym.Env):
         truncated = False
         info = {}
 
-        # Decrement agent energy
-        self.agent.energy -= 1
+        # Decrement agent needs
+        self.agent.hunger -= 0.1
+        self.agent.thirst -= 0.1
 
         # Check for boundary collision
         if check_boundaries(self.grid, new_x, new_y):
             # Check for resource collection
-            if get_cell_content(self.grid, new_x, new_y) == RESOURCE:
-                reward += 1.0 # Reward for collecting resource
-                self.agent.energy = min(100, self.agent.energy + 50) # Replenish energy, cap at 100
-                # Remove resource from grid and list
-                self.resources = [] # Assuming only one resource for now
-                self.grid[new_y, new_x] = EMPTY
-                # Do not terminate on resource collection anymore
-            elif get_cell_content(self.grid, new_x, new_y) == EMPTY:
-                # Move agent
+            cell_content = get_cell_content(self.grid, new_x, new_y)
+            if cell_content == RESOURCE:
+                collected_resource = None
+                for res in self.resources:
+                    if res.x == new_x and res.y == new_y:
+                        collected_resource = res
+                        break
+
+                if collected_resource:
+                    if collected_resource.type == 'food':
+                        reward += 0.5 # Reward for collecting food
+                        self.agent.hunger = min(100, self.agent.hunger + 30) # Replenish hunger
+                    elif collected_resource.type == 'water':
+                        reward += 0.5 # Reward for collecting water
+                        self.agent.thirst = min(100, self.agent.thirst + 30) # Replenish thirst
+
+                    # Remove collected resource from grid and list
+                    self.resources.remove(collected_resource)
+                    self.grid[new_y, new_x] = EMPTY
+
+            # Move agent if the new position is empty
+            if get_cell_content(self.grid, new_x, new_y) == EMPTY:
                 self.grid[old_y, old_x] = EMPTY # Clear old position
                 self.agent.x, self.agent.y = new_x, new_y
                 place_entity(self.grid, self.agent, AGENT)
@@ -103,14 +141,35 @@ class SierraEnv(gym.Env):
             reward -= 0.1 # Small penalty for hitting wall
             # Agent stays in the same position
 
-        # Check for energy depletion
-        if self.agent.energy <= 0:
+        # Check for low needs penalty (optional)
+        if self.agent.hunger <= 20 or self.agent.thirst <= 20:
+             reward -= 0.05 # Small penalty for low needs
+
+        # Check for death (hunger or thirst depletion)
+        if self.agent.hunger <= 0 or self.agent.thirst <= 0:
             terminated = True
-            reward -= 1.0 # Penalty for running out of energy
+            reward -= 1.0 # Large penalty for death
+
+        # Prepare observation
+        food_locs = [(-1, -1)] * 2
+        water_locs = [(-1, -1)] * 1
+        food_count = 0
+        water_count = 0
+
+        for res in self.resources:
+            if res.type == 'food' and food_count < 2:
+                food_locs[food_count] = (res.x, res.y)
+                food_count += 1
+            elif res.type == 'water' and water_count < 1:
+                water_locs[water_count] = (res.x, res.y)
+                water_count += 1
 
         observation = {
-            "agent": np.array([self.agent.x, self.agent.y], dtype=int),
-            "resource": np.array([self.resources[0].x, self.resources[0].y], dtype=int) if self.resources else np.array([-1, -1], dtype=int), # Use -1, -1 if no resource
+            "agent_pos": np.array([self.agent.x, self.agent.y], dtype=int),
+            "food_locs": np.array(food_locs, dtype=int),
+            "water_locs": np.array(water_locs, dtype=int),
+            "hunger": np.array([self.agent.hunger], dtype=np.float32),
+            "thirst": np.array([self.agent.thirst], dtype=np.float32),
         }
 
         return observation, reward, terminated, truncated, info

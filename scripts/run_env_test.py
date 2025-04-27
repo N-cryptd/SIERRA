@@ -7,9 +7,10 @@ env = SierraEnv()
 print("Starting environment test...")
 
 # Run for a few steps
-num_steps = 100
+num_steps = 500
 
 observation, info = env.reset()
+print(f"Initial Observation: {observation}")
 
 for step in range(num_steps):
     # Sample a random action
@@ -23,6 +24,26 @@ for step in range(num_steps):
 
     # Print step information
     print(f"Step {step + 1}: Action={action}, Reward={reward}, Terminated={terminated}, Truncated={truncated}")
+    # Print detailed observation information
+    if isinstance(observation, dict):
+        agent_obs = observation.get('agent')
+        resource_obs = observation.get('resource') # Use 'resource' key
+
+        if agent_obs is not None:
+            print(f"  Agent Position: {agent_obs[:2]}") # Assuming first two elements are position
+            if len(agent_obs) > 2: # Check if hunger/thirst are included
+                print(f"  Agent Hunger: {agent_obs[2]}")
+            if len(agent_obs) > 3: # Check if thirst is included
+                print(f"  Agent Thirst: {agent_obs[3]}")
+
+        if resource_obs is not None:
+            # Check if it's a single resource or multiple
+            if resource_obs.ndim == 1: # Single resource (e.g., array([x, y]))
+                 print(f"  Resource Location: {resource_obs}")
+            else: # Multiple resources (e.g., array([[x1, y1], [x2, y2]]))
+                 print(f"  Resource Locations: {resource_obs}")
+    else:
+        print(f"  Observation: {observation}")
 
     # Check if episode finished
     if terminated or truncated:
