@@ -74,13 +74,11 @@ class SierraEnv(gym.Env):
             "time_of_day": gym.spaces.Discrete(2), # 0 for Night, 1 for Day
             "current_weather": gym.spaces.Discrete(len(WEATHER_TYPES)),
             "current_season": gym.spaces.Discrete(len(SEASON_TYPES)),
-            "inventory": gym.spaces.Dict({
-                "wood": gym.spaces.Box(low=0, high=MAX_INVENTORY_PER_ITEM, shape=(1,), dtype=int),
-                "stone": gym.spaces.Box(low=0, high=MAX_INVENTORY_PER_ITEM, shape=(1,), dtype=int),
-                "charcoal": gym.spaces.Box(low=0, high=MAX_INVENTORY_PER_ITEM, shape=(1,), dtype=int),
-                "cloth": gym.spaces.Box(low=0, high=MAX_INVENTORY_PER_ITEM, shape=(1,), dtype=int),
-                "murky_water": gym.spaces.Box(low=0, high=MAX_INVENTORY_PER_ITEM, shape=(1,), dtype=int)
-            }),
+            "inv_wood": gym.spaces.Box(low=0, high=MAX_INVENTORY_PER_ITEM, shape=(1,), dtype=int),
+            "inv_stone": gym.spaces.Box(low=0, high=MAX_INVENTORY_PER_ITEM, shape=(1,), dtype=int),
+            "inv_charcoal": gym.spaces.Box(low=0, high=MAX_INVENTORY_PER_ITEM, shape=(1,), dtype=int),
+            "inv_cloth": gym.spaces.Box(low=0, high=MAX_INVENTORY_PER_ITEM, shape=(1,), dtype=int),
+            "inv_murky_water": gym.spaces.Box(low=0, high=MAX_INVENTORY_PER_ITEM, shape=(1,), dtype=int),
             "has_shelter": gym.spaces.Discrete(2), # 0 for False, 1 for True
             "has_axe": gym.spaces.Discrete(2),     # 0 for False, 1 for True
             "water_filters_available": gym.spaces.Box(low=0, high=MAX_WATER_FILTERS, shape=(1,), dtype=int)
@@ -151,10 +149,11 @@ class SierraEnv(gym.Env):
             "time_of_day": int(self.is_day),
             "current_weather": WEATHER_TYPES.index(self.current_weather),
             "current_season": SEASON_TYPES.index(self.current_season),
-            "inventory": {
-                material: np.array([self.agent.inventory.get(material, 0)], dtype=int)
-                for material in Resource.MATERIAL_TYPES
-            },
+            "inv_wood": np.array([self.agent.inventory.get("wood", 0)], dtype=int),
+            "inv_stone": np.array([self.agent.inventory.get("stone", 0)], dtype=int),
+            "inv_charcoal": np.array([self.agent.inventory.get("charcoal", 0)], dtype=int),
+            "inv_cloth": np.array([self.agent.inventory.get("cloth", 0)], dtype=int),
+            "inv_murky_water": np.array([self.agent.inventory.get("murky_water", 0)], dtype=int),
             "has_shelter": int(self.agent.has_shelter),
             "has_axe": int(self.agent.has_axe),
             "water_filters_available": np.array([self.agent.water_filters_available], dtype=int)
@@ -411,10 +410,11 @@ class SierraEnv(gym.Env):
             "time_of_day": int(self.is_day),
             "current_weather": WEATHER_TYPES.index(self.current_weather),
             "current_season": SEASON_TYPES.index(self.current_season),
-            "inventory": {
-                material: np.array([self.agent.inventory.get(material, 0)], dtype=int)
-                for material in Resource.MATERIAL_TYPES
-            },
+            "inv_wood": np.array([self.agent.inventory.get("wood", 0)], dtype=int),
+            "inv_stone": np.array([self.agent.inventory.get("stone", 0)], dtype=int),
+            "inv_charcoal": np.array([self.agent.inventory.get("charcoal", 0)], dtype=int),
+            "inv_cloth": np.array([self.agent.inventory.get("cloth", 0)], dtype=int),
+            "inv_murky_water": np.array([self.agent.inventory.get("murky_water", 0)], dtype=int),
             "has_shelter": int(self.agent.has_shelter),
             "has_axe": int(self.agent.has_axe),
             "water_filters_available": np.array([self.agent.water_filters_available], dtype=int)
