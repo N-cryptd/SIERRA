@@ -8,7 +8,7 @@ Survival Intelligence Environment for Resource Research and Adaptation
 - Grid-based navigation environment with multi-resource management (food, water, materials)
 - Dynamic environmental conditions (day/night cycles, weather patterns, seasons)
 - Threat and hazard system with avoidance mechanics
-- **Crafting mechanics for creating tools, shelter, or other essential items**
+- Crafting mechanics for creating tools, shelter, or other essential items
 - Reinforcement learning agent implementation with observation and action spaces
 - Training framework with configurable hyperparameters
 - Visualization system for game states and agent performance
@@ -58,7 +58,7 @@ graph LR
 
 ### Component Descriptions
 
-- **Environment Core**: Game logic, state transitions, and reward calculation
+- **Environment Core**: Game logic, state transitions, reward calculation, and management of crafting and item effects.
 - **Agent Framework**: Deep RL implementation with neural network policies
 - **Training Manager**: Coordinates training sessions and hyperparameter optimization
 - **Visualization Engine**: Renders game state and agent behavior for analysis
@@ -107,10 +107,12 @@ graph TD
 
 
 - **GameState**: Grid representation, agent position, resource locations, threat positions
-- **AgentObservation**: Partial or full state information provided to agent
-- **Action**: Discrete or continuous action space (movement, interaction, crafting)
+- **AgentObservation**: Partial or full state information provided to agent. Now includes agent's inventory (wood, stone, charcoal, cloth, murky_water), and status of crafted items (has_shelter, has_axe, water_filters_available).
+- **Action**: Discrete action space. Includes movement (up, down, left, right), crafting (craft basic_shelter, craft water_filter, craft crude_axe), and purify_water.
 - **Reward**: Multi-component reward signal based on survival metrics
 - **TrainingMetadata**: Hyperparameters, episode counts, total steps
+
+New material resources available in the environment include: wood, stone, charcoal, and cloth. Murky water is also a new collectable resource.
 
 ```mermaid
 graph TD
@@ -370,3 +372,30 @@ It's worth noting that the SAC algorithm was also considered but was found to be
 - Training configuration guides
 - Experiment results analysis
 - Model performance comparisons
+
+### Crafting System
+
+#### Craftable Items
+
+- **Basic Shelter:**
+    - *Materials:* 4 wood, 2 stone
+    - *Effect:* Reduces hunger and thirst decay by 25% (passive). Provides a one-time reward of +5.0 upon crafting.
+- **Water Filter:**
+    - *Materials:* 2 charcoal, 1 cloth, 1 stone
+    - *Effect:* Enables the 'Purify Water' action. Each filter allows one purification. Agent can hold up to 5 filters. Crafting reward: +0.5.
+- **Crude Axe:**
+    - *Materials:* 2 stone, 1 wood
+    - *Effect:* Increases wood gathered per collection action from 1 to 2 units. Crafting reward: +1.0.
+
+#### Materials & Special Resources
+
+The primary materials found in the environment for crafting are: `wood`, `stone`, `charcoal`, and `cloth`.
+`Murky_water` is a new collectable resource that is not directly consumable but can be purified using a Water Filter.
+
+#### Crafting Process
+
+Crafting is performed via specific actions available to the agent. If the agent possesses the required materials in its inventory for a chosen item, the materials are consumed from the inventory, and the item is added to the agent's possession (e.g., `has_axe` becomes true) or state (e.g., `water_filters_available` increases). Each successful crafting action also provides a specific reward. If materials are insufficient, or the item cannot be crafted (e.g., already owned for unique items like shelter/axe, or max quantity reached for stackable items like filters), the action results in a small step penalty, and no resources are consumed.
+
+#### Purify Water Action
+
+A specific 'Purify Water' action is available. If the agent has at least one Water Filter and at least one unit of Murky Water in its inventory, this action consumes one filter charge (decrementing `water_filters_available`), one unit of murky water from the inventory, and replenishes the agent's thirst. This action also provides a small reward. If the conditions are not met, the action results in a step penalty.

@@ -1,8 +1,7 @@
 import argparse
 import numpy as np
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
-from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env import DummyVecEnv
 
 # Assuming SierraEnv is located at sierra.environment.core
 # You might need to adjust the import path based on your project structure
@@ -21,19 +20,11 @@ def evaluate_model(model_path, num_episodes=100):
         num_episodes (int): Number of episodes to run for evaluation.
     """
     # Create the environment
-    # Use DummyVecEnv for simplicity, switch to SubprocVecEnv for parallel evaluation
     env = DummyVecEnv([lambda: SierraEnv()])
 
     print(f"Loading model from {model_path}")
     try:
-        if "ppo" in model_path.lower():
-            model = PPO.load(model_path, env=env)
-        elif "dqn" in model_path.lower():
-            from stable_baselines3 import DQN
-            model = DQN.load(model_path, env=env)
-        else:
-            print(f"Error: Unknown model type in path: {model_path}")
-            return
+        model = PPO.load(model_path, env=env)
     except Exception as e:
         print(f"Error loading model: {e}")
         return
@@ -52,10 +43,10 @@ def evaluate_model(model_path, num_episodes=100):
         while not done:
             action, _ = model.predict(obs, deterministic=True)
             obs, reward, done, info = env.step(action)
-            total_reward += reward[0] # Assuming reward is a list/array from VecEnv
+            total_reward += reward[0]
             episode_length += 1
             if isinstance(done, np.ndarray):
-                 done = done[0] # Assuming done is a list/array from VecEnv
+                 done = done[0]
 
 
         episode_rewards.append(total_reward)

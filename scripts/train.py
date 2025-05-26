@@ -1,9 +1,26 @@
 import gymnasium as gym
 from sierra.environment.core import SierraEnv
-from stable_baselines3 import PPO, SAC, DQN
+from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.callbacks import BaseCallback
 import argparse
 import os
+import numpy as np
+
+class SimpleRewardCallback(BaseCallback):
+    def __init__(self, verbose=0):
+        super(SimpleRewardCallback, self).__init__(verbose)
+        self.rewards = []
+
+    def _on_step(self) -> bool:
+        if self.locals['dones'][0]:
+            self.rewards.append(self.locals['infos'][0]['episode']['r'])
+        return True
+    
+    def get_mean_reward(self):
+        if not self.rewards:
+            return 0
+        return np.mean(self.rewards)
 
 # Set up argument parser
 parser = argparse.ArgumentParser(description='Train a basic agent on SierraEnv.')
@@ -11,12 +28,16 @@ parser.add_argument('--total_timesteps', type=int, default=10000,
                     help='Total number of training timesteps')
 parser.add_argument('--learning_rate', type=float, default=0.0003,
                     help='Learning rate for the agent')
+parser.add_argument('--n_steps', type=int, default=2048,
+                    help='Number of steps to run for each environment per update')
+parser.add_argument('--clip_range', type=float, default=0.2,
+                    help='Clipping parameter for PPO')
 parser.add_argument('--log_dir', type=str, default="./tensorboard_logs/",
                     help='Directory for TensorBoard logs')
 parser.add_argument('--save_path', type=str, default="./trained_model",
                     help='Path to save the trained model')
-parser.add_argument('--algo', type=str, default='PPO', choices=['PPO', 'SAC', 'DQN'],
-                    help='Stable Baselines3 algorithm to use (PPO, SAC, DQN)')
+parser.add_argument('--load_path', type=str, default=None,
+                    help='Path to load a pre-trained model')
 
 args = parser.parse_args()
 
@@ -27,21 +48,25 @@ os.makedirs(args.log_dir, exist_ok=True)
 env = DummyVecEnv([lambda: SierraEnv()])
 
 # Instantiate the agent
-if args.algo == 'PPO':
-    model = PPO("MultiInputPolicy", env, verbose=1, learning_rate=args.learning_rate, tensorboard_log=args.log_dir)
-elif args.algo == 'SAC':
-    # SAC specific hyperparameters - using reasonable defaults for now
-    model = SAC("MultiInputPolicy", env, verbose=1, learning_rate=args.learning_rate, tensorboard_log=args.log_dir, buffer_size=100000, learning_starts=1000, tau=0.005, gamma=0.99)
-elif args.algo == 'DQN':
-    # DQN specific hyperparameters - using reasonable defaults for now
-    model = DQN("MultiInputPolicy", env, verbose=1, learning_rate=args.learning_rate, tensorboard_log=args.log_dir, buffer_size=100000, learning_starts=1000, gamma=0.99, exploration_final_eps=0.01)
+if args.load_path:
+    model = PPO.load(args.load_path, env=env)
 else:
-    raise ValueError(f"Unknown algorithm: {args.algo}")
+    model = PPO(
+        "MultiInputPolicy",
+        env,
+        verbose=0, # Set to 0 for tuning
+        learning_rate=args.learning_rate,
+        n_steps=args.n_steps,
+        clip_range=args.clip_range,
+        tensorboard_log=args.log_dir
+    )
 
 # Train the agent
-model.learn(total_timesteps=args.total_timesteps)
+callback = SimpleRewardCallback()
+model.learn(total_timesteps=args.total_timesteps, callback=callback)
 
 # Save the trained agent
 model.save(args.save_path)
 
-print(f"Basic agent training complete. Model saved to {args.save_path}")
+# The last line of output should be the mean reward
+print(callback.get_mean_reward())
