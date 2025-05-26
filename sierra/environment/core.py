@@ -4,46 +4,85 @@ import random
 
 from .grid import create_grid, place_entity, check_boundaries, get_cell_content, EMPTY, AGENT, RESOURCE
 from .entities import Agent, Resource
+from enum import Enum
 
-# Environmental Constants
-DAY_LENGTH = 100
-NIGHT_LENGTH = 50
-MAX_WOOD_SOURCES = 2
-MAX_STONE_SOURCES = 2
-MAX_CHARCOAL_SOURCES = 1
-MAX_CLOTH_SOURCES = 1
-MAX_INVENTORY_PER_ITEM = 10
-MAX_WATER_FILTERS = 5
+# --- Constants Grouping ---
 
+# Time Cycle
+TIME_CONSTANTS = {
+    "DAY_LENGTH": 100,
+    "NIGHT_LENGTH": 50,
+}
+
+# Resource Generation Limits
+RESOURCE_LIMITS = {
+    "MAX_FOOD_SOURCES": 2,
+    "MAX_WATER_SOURCES": 1,
+    "MAX_WOOD_SOURCES": 2,
+    "MAX_STONE_SOURCES": 2,
+    "MAX_CHARCOAL_SOURCES": 1,
+    "MAX_CLOTH_SOURCES": 1,
+    "MAX_MURKY_WATER_SOURCES": 2,
+}
+
+# Inventory and Item Related
+INVENTORY_CONSTANTS = {
+    "MAX_INVENTORY_PER_ITEM": 10,
+    "MAX_WATER_FILTERS": 5, # Max craftable/usable filters by agent
+}
+
+# Crafting
 CRAFTING_RECIPES = {
     "basic_shelter": {"wood": 4, "stone": 2},
     "water_filter": {"charcoal": 2, "cloth": 1, "stone": 1},
     "crude_axe": {"stone": 2, "wood": 1}
 }
+
 CRAFTING_REWARDS = {
     "basic_shelter": 5.0,
     "water_filter": 0.5,
     "crude_axe": 1.0
 }
-# Action mapping
-ACTION_MOVE_UP = 0
-ACTION_MOVE_DOWN = 1
-ACTION_MOVE_LEFT = 2
-ACTION_MOVE_RIGHT = 3
-ACTION_CRAFT_SHELTER = 4
-ACTION_CRAFT_FILTER = 5
-ACTION_CRAFT_AXE = 6
-ACTION_PURIFY_WATER = 7
-NUM_ACTIONS = 8 # 4 move + 3 craft + 1 purify
 
-MAX_MURKY_WATER_SOURCES = 2
-PURIFIED_WATER_THIRST_REPLENISH = 40
-WOOD_COLLECTION_AXE_BONUS = 2
+# Action Definitions
+class Actions(Enum):
+    MOVE_UP = 0
+    MOVE_DOWN = 1
+    MOVE_LEFT = 2
+    MOVE_RIGHT = 3
+    CRAFT_SHELTER = 4
+    CRAFT_FILTER = 5
+    CRAFT_AXE = 6
+    PURIFY_WATER = 7
 
-WEATHER_TYPES = ['clear', 'rainy', 'cloudy']
-SEASON_TYPES = ['spring', 'summer', 'autumn', 'winter']
-WEATHER_TRANSITION_STEPS = 200
-SEASON_TRANSITION_STEPS = 1000
+    @classmethod
+    def num_actions(cls):
+        return len(cls)
+
+# Gameplay Modifiers and Values
+GAMEPLAY_CONSTANTS = {
+    "INITIAL_HUNGER": 100.0,
+    "INITIAL_THIRST": 100.0,
+    "MAX_HUNGER": 100.0,
+    "MAX_THIRST": 100.0,
+    "PURIFIED_WATER_THIRST_REPLENISH": 40,
+    "WOOD_COLLECTION_AXE_BONUS": 2,
+    "LOW_NEED_THRESHOLD": 20,
+    # Decay constants for Agent needs
+    "BASE_DECAY": 0.1,
+    "SHELTER_MULTIPLIER": 0.75,
+    "NIGHT_MULTIPLIER": 1.2,
+    "NIGHT_NO_SHELTER_EXTRA_MULTIPLIER": 1.5,
+}
+
+# Weather and Seasons
+ENVIRONMENT_CYCLE_CONSTANTS = {
+    "WEATHER_TYPES": ['clear', 'rainy', 'cloudy'],
+    "SEASON_TYPES": ['spring', 'summer', 'autumn', 'winter'],
+    "WEATHER_TRANSITION_STEPS": 200,
+    "SEASON_TRANSITION_STEPS": 1000,
+}
+
 
 class SierraEnv(gym.Env):
     """A simple grid world environment for the SIERRA project."""
@@ -60,32 +99,32 @@ class SierraEnv(gym.Env):
             "agent_pos": gym.spaces.Box(low=np.array([0, 0]), high=np.array([self.grid_width - 1, self.grid_height - 1]), dtype=int),
             "food_locs": gym.spaces.Box(low=np.array([[-1, -1] for _ in range(2)]), high=np.array([[self.grid_width - 1, self.grid_height - 1] for _ in range(2)]), dtype=int),
             "water_locs": gym.spaces.Box(low=np.array([[-1, -1] for _ in range(1)]), high=np.array([[self.grid_width - 1, self.grid_height - 1] for _ in range(1)]), dtype=int),
-            "wood_locs": gym.spaces.Box(low=np.array([[-1, -1] for _ in range(MAX_WOOD_SOURCES)]), high=np.array([[self.grid_width - 1, self.grid_height - 1] for _ in range(MAX_WOOD_SOURCES)]), dtype=int),
-            "stone_locs": gym.spaces.Box(low=np.array([[-1, -1] for _ in range(MAX_STONE_SOURCES)]), high=np.array([[self.grid_width - 1, self.grid_height - 1] for _ in range(MAX_STONE_SOURCES)]), dtype=int),
-            "charcoal_locs": gym.spaces.Box(low=np.array([[-1, -1] for _ in range(MAX_CHARCOAL_SOURCES)]), high=np.array([[self.grid_width - 1, self.grid_height - 1] for _ in range(MAX_CHARCOAL_SOURCES)]), dtype=int),
-            "cloth_locs": gym.spaces.Box(low=np.array([[-1, -1] for _ in range(MAX_CLOTH_SOURCES)]), high=np.array([[self.grid_width - 1, self.grid_height - 1] for _ in range(MAX_CLOTH_SOURCES)]), dtype=int),
+            "wood_locs": gym.spaces.Box(low=np.array([[-1, -1] for _ in range(RESOURCE_LIMITS["MAX_WOOD_SOURCES"])]), high=np.array([[self.grid_width - 1, self.grid_height - 1] for _ in range(RESOURCE_LIMITS["MAX_WOOD_SOURCES"])]), dtype=int),
+            "stone_locs": gym.spaces.Box(low=np.array([[-1, -1] for _ in range(RESOURCE_LIMITS["MAX_STONE_SOURCES"])]), high=np.array([[self.grid_width - 1, self.grid_height - 1] for _ in range(RESOURCE_LIMITS["MAX_STONE_SOURCES"])]), dtype=int),
+            "charcoal_locs": gym.spaces.Box(low=np.array([[-1, -1] for _ in range(RESOURCE_LIMITS["MAX_CHARCOAL_SOURCES"])]), high=np.array([[self.grid_width - 1, self.grid_height - 1] for _ in range(RESOURCE_LIMITS["MAX_CHARCOAL_SOURCES"])]), dtype=int),
+            "cloth_locs": gym.spaces.Box(low=np.array([[-1, -1] for _ in range(RESOURCE_LIMITS["MAX_CLOTH_SOURCES"])]), high=np.array([[self.grid_width - 1, self.grid_height - 1] for _ in range(RESOURCE_LIMITS["MAX_CLOTH_SOURCES"])]), dtype=int),
             "murky_water_locs": gym.spaces.Box(
-                low=np.array([[-1, -1] for _ in range(MAX_MURKY_WATER_SOURCES)]),
-                high=np.array([[self.grid_width - 1, self.grid_height - 1] for _ in range(MAX_MURKY_WATER_SOURCES)]),
+                low=np.array([[-1, -1] for _ in range(RESOURCE_LIMITS["MAX_MURKY_WATER_SOURCES"])]),
+                high=np.array([[self.grid_width - 1, self.grid_height - 1] for _ in range(RESOURCE_LIMITS["MAX_MURKY_WATER_SOURCES"])]),
                 dtype=int
             ),
             "hunger": gym.spaces.Box(low=0, high=100, shape=(1,), dtype=np.float32),
             "thirst": gym.spaces.Box(low=0, high=100, shape=(1,), dtype=np.float32),
             "time_of_day": gym.spaces.Discrete(2), # 0 for Night, 1 for Day
-            "current_weather": gym.spaces.Discrete(len(WEATHER_TYPES)),
-            "current_season": gym.spaces.Discrete(len(SEASON_TYPES)),
-            "inv_wood": gym.spaces.Box(low=0, high=MAX_INVENTORY_PER_ITEM, shape=(1,), dtype=int),
-            "inv_stone": gym.spaces.Box(low=0, high=MAX_INVENTORY_PER_ITEM, shape=(1,), dtype=int),
-            "inv_charcoal": gym.spaces.Box(low=0, high=MAX_INVENTORY_PER_ITEM, shape=(1,), dtype=int),
-            "inv_cloth": gym.spaces.Box(low=0, high=MAX_INVENTORY_PER_ITEM, shape=(1,), dtype=int),
-            "inv_murky_water": gym.spaces.Box(low=0, high=MAX_INVENTORY_PER_ITEM, shape=(1,), dtype=int),
+            "current_weather": gym.spaces.Discrete(len(ENVIRONMENT_CYCLE_CONSTANTS["WEATHER_TYPES"])),
+            "current_season": gym.spaces.Discrete(len(ENVIRONMENT_CYCLE_CONSTANTS["SEASON_TYPES"])),
+            "inv_wood": gym.spaces.Box(low=0, high=INVENTORY_CONSTANTS["MAX_INVENTORY_PER_ITEM"], shape=(1,), dtype=int),
+            "inv_stone": gym.spaces.Box(low=0, high=INVENTORY_CONSTANTS["MAX_INVENTORY_PER_ITEM"], shape=(1,), dtype=int),
+            "inv_charcoal": gym.spaces.Box(low=0, high=INVENTORY_CONSTANTS["MAX_INVENTORY_PER_ITEM"], shape=(1,), dtype=int),
+            "inv_cloth": gym.spaces.Box(low=0, high=INVENTORY_CONSTANTS["MAX_INVENTORY_PER_ITEM"], shape=(1,), dtype=int),
+            "inv_murky_water": gym.spaces.Box(low=0, high=INVENTORY_CONSTANTS["MAX_INVENTORY_PER_ITEM"], shape=(1,), dtype=int),
             "has_shelter": gym.spaces.Discrete(2), # 0 for False, 1 for True
             "has_axe": gym.spaces.Discrete(2),     # 0 for False, 1 for True
-            "water_filters_available": gym.spaces.Box(low=0, high=MAX_WATER_FILTERS, shape=(1,), dtype=int)
+            "water_filters_available": gym.spaces.Box(low=0, high=INVENTORY_CONSTANTS["MAX_WATER_FILTERS"], shape=(1,), dtype=int)
         })
 
         # Define action space
-        self.action_space = gym.spaces.Discrete(NUM_ACTIONS)
+        self.action_space = gym.spaces.Discrete(Actions.num_actions())
 
         self.agent = None
         self.resources = []
@@ -93,9 +132,45 @@ class SierraEnv(gym.Env):
         # Initialize environmental state
         self.world_time = 0
         self.is_day = True # Start during the day
-        self.current_weather = self.np_random.choice(WEATHER_TYPES)
-        self.current_season = self.np_random.choice(SEASON_TYPES)
+        self.current_weather = self.np_random.choice(ENVIRONMENT_CYCLE_CONSTANTS["WEATHER_TYPES"])
+        self.current_season = self.np_random.choice(ENVIRONMENT_CYCLE_CONSTANTS["SEASON_TYPES"])
 
+    def _get_resource_locations(self, resource_type_name: str, max_count: int) -> list[tuple[int, int]]:
+        """Helper function to get locations of a specific resource type."""
+        locations = [(-1, -1)] * max_count
+        count = 0
+        for resource in self.resources:
+            if resource.type == resource_type_name and count < max_count:
+                locations[count] = (resource.x, resource.y)
+                count += 1
+        return locations
+
+    def _get_observation(self):
+        """Constructs and returns the observation dictionary."""
+        observation = {
+            "agent_pos": np.array([self.agent.x, self.agent.y], dtype=int),
+            "food_locs": np.array(self._get_resource_locations("food", RESOURCE_LIMITS["MAX_FOOD_SOURCES"]), dtype=int),
+            "water_locs": np.array(self._get_resource_locations("water", RESOURCE_LIMITS["MAX_WATER_SOURCES"]), dtype=int),
+            "wood_locs": np.array(self._get_resource_locations("wood", RESOURCE_LIMITS["MAX_WOOD_SOURCES"]), dtype=int),
+            "stone_locs": np.array(self._get_resource_locations("stone", RESOURCE_LIMITS["MAX_STONE_SOURCES"]), dtype=int),
+            "charcoal_locs": np.array(self._get_resource_locations("charcoal", RESOURCE_LIMITS["MAX_CHARCOAL_SOURCES"]), dtype=int),
+            "cloth_locs": np.array(self._get_resource_locations("cloth", RESOURCE_LIMITS["MAX_CLOTH_SOURCES"]), dtype=int),
+            "murky_water_locs": np.array(self._get_resource_locations("murky_water", RESOURCE_LIMITS["MAX_MURKY_WATER_SOURCES"]), dtype=int),
+            "hunger": np.array([self.agent.hunger], dtype=np.float32),
+            "thirst": np.array([self.agent.thirst], dtype=np.float32),
+            "time_of_day": int(self.is_day),
+            "current_weather": ENVIRONMENT_CYCLE_CONSTANTS["WEATHER_TYPES"].index(self.current_weather),
+            "current_season": ENVIRONMENT_CYCLE_CONSTANTS["SEASON_TYPES"].index(self.current_season),
+            "inv_wood": np.array([self.agent.get_item_count("wood")], dtype=int),
+            "inv_stone": np.array([self.agent.get_item_count("stone")], dtype=int),
+            "inv_charcoal": np.array([self.agent.get_item_count("charcoal")], dtype=int),
+            "inv_cloth": np.array([self.agent.get_item_count("cloth")], dtype=int),
+            "inv_murky_water": np.array([self.agent.get_item_count("murky_water")], dtype=int),
+            "has_shelter": int(self.agent.has_shelter),
+            "has_axe": int(self.agent.has_axe),
+            "water_filters_available": np.array([self.agent.water_filters_available], dtype=int)
+        }
+        return observation
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -103,91 +178,55 @@ class SierraEnv(gym.Env):
         # Reset environmental state
         self.world_time = 0
         self.is_day = True # Start during the day
-        self.current_weather = self.np_random.choice(WEATHER_TYPES)
-        self.current_season = self.np_random.choice(SEASON_TYPES)
+        self.current_weather = self.np_random.choice(ENVIRONMENT_CYCLE_CONSTANTS["WEATHER_TYPES"])
+        self.current_season = self.np_random.choice(ENVIRONMENT_CYCLE_CONSTANTS["SEASON_TYPES"])
 
         # Reset grid
         self.grid = create_grid(self.grid_width, self.grid_height)
+        self.resources = [] # Clear previous resources
 
-        # Place agent randomly
-        agent_x = self.np_random.integers(0, self.grid_width)
-        agent_y = self.np_random.integers(0, self.grid_height)
-        self.agent = Agent(agent_x, agent_y, energy=100) # Initialize agent with energy
-        place_entity(self.grid, self.agent, AGENT)
+        # Create a list of all possible coordinates
+        all_coords = [(x, y) for x in range(self.grid_width) for y in range(self.grid_height)]
+        self.np_random.shuffle(all_coords) # Shuffle coordinates using the environment's random number generator
 
-        # Place resources randomly (ensure no overlap with agent or other resources)
-        self.resources = []
-        resource_types = (['food'] * 2 + ['water'] * 1 +
-                          ['wood'] * MAX_WOOD_SOURCES +
-                          ['stone'] * MAX_STONE_SOURCES +
-                          ['charcoal'] * MAX_CHARCOAL_SOURCES +
-                          ['cloth'] * MAX_CLOTH_SOURCES + 
-                          ['murky_water'] * MAX_MURKY_WATER_SOURCES)
+        # Place agent
+        if not all_coords: # Should not happen in a grid > 0x0
+            raise ValueError("Grid is too small to place agent.")
+        agent_x, agent_y = all_coords.pop()
+        self.agent = Agent(agent_x, agent_y)
+        place_entity(self.grid, self.agent, AGENT, x=self.agent.x, y=self.agent.y)
 
-        for res_type in resource_types:
-            placed = False
-            while not placed:
-                res_x = self.np_random.integers(0, self.grid_width)
-                res_y = self.np_random.integers(0, self.grid_height)
-                if get_cell_content(self.grid, res_x, res_y) == EMPTY:
-                    new_resource = Resource(res_x, res_y, type=res_type)
-                    self.resources.append(new_resource)
-                    place_entity(self.grid, new_resource, RESOURCE)
-                    placed = True
-
-        observation = {
-            "agent_pos": np.array([self.agent.x, self.agent.y], dtype=int),
-            "food_locs": np.array([[-1, -1]] * 2, dtype=int),
-            "water_locs": np.array([[-1, -1]] * 1, dtype=int),
-            "wood_locs": np.array([[-1, -1]] * MAX_WOOD_SOURCES, dtype=int),
-            "stone_locs": np.array([[-1, -1]] * MAX_STONE_SOURCES, dtype=int),
-            "charcoal_locs": np.array([[-1, -1]] * MAX_CHARCOAL_SOURCES, dtype=int),
-            "cloth_locs": np.array([[-1, -1]] * MAX_CLOTH_SOURCES, dtype=int),
-            "murky_water_locs": np.array([[-1, -1]] * MAX_MURKY_WATER_SOURCES, dtype=int),
-            "hunger": np.array([self.agent.hunger], dtype=np.float32),
-            "thirst": np.array([self.agent.thirst], dtype=np.float32),
-            "time_of_day": int(self.is_day),
-            "current_weather": WEATHER_TYPES.index(self.current_weather),
-            "current_season": SEASON_TYPES.index(self.current_season),
-            "inv_wood": np.array([self.agent.inventory.get("wood", 0)], dtype=int),
-            "inv_stone": np.array([self.agent.inventory.get("stone", 0)], dtype=int),
-            "inv_charcoal": np.array([self.agent.inventory.get("charcoal", 0)], dtype=int),
-            "inv_cloth": np.array([self.agent.inventory.get("cloth", 0)], dtype=int),
-            "inv_murky_water": np.array([self.agent.inventory.get("murky_water", 0)], dtype=int),
-            "has_shelter": int(self.agent.has_shelter),
-            "has_axe": int(self.agent.has_axe),
-            "water_filters_available": np.array([self.agent.water_filters_available], dtype=int)
+        # Define resource counts based on RESOURCE_LIMITS
+        resource_counts_dict = {
+            'food': RESOURCE_LIMITS["MAX_FOOD_SOURCES"],
+            'water': RESOURCE_LIMITS["MAX_WATER_SOURCES"],
+            'wood': RESOURCE_LIMITS["MAX_WOOD_SOURCES"],
+            'stone': RESOURCE_LIMITS["MAX_STONE_SOURCES"],
+            'charcoal': RESOURCE_LIMITS["MAX_CHARCOAL_SOURCES"],
+            'cloth': RESOURCE_LIMITS["MAX_CLOTH_SOURCES"],
+            'murky_water': RESOURCE_LIMITS["MAX_MURKY_WATER_SOURCES"]
         }
+        
+        resource_types_to_spawn = []
+        for res_type, count in resource_counts_dict.items():
+            resource_types_to_spawn.extend([res_type] * count)
+        
+        # Shuffle the list of resource types to ensure random placement order if desired,
+        # though popping from shuffled coords already randomizes location.
+        # self.np_random.shuffle(resource_types_to_spawn) # This shuffle is optional
 
-        food_count = 0
-        water_count = 0
-        wood_count = 0
-        stone_count = 0
-        charcoal_count = 0
-        cloth_count = 0
-        murky_water_count = 0
-        for res in self.resources:
-            if res.type == 'food' and food_count < 2:
-                observation["food_locs"][food_count] = [res.x, res.y]
-                food_count += 1
-            elif res.type == 'water' and water_count < 1:
-                observation["water_locs"][water_count] = [res.x, res.y]
-                water_count += 1
-            elif res.type == 'wood' and wood_count < MAX_WOOD_SOURCES:
-                observation["wood_locs"][wood_count] = [res.x, res.y]
-                wood_count += 1
-            elif res.type == 'stone' and stone_count < MAX_STONE_SOURCES:
-                observation["stone_locs"][stone_count] = [res.x, res.y]
-                stone_count += 1
-            elif res.type == 'charcoal' and charcoal_count < MAX_CHARCOAL_SOURCES:
-                observation["charcoal_locs"][charcoal_count] = [res.x, res.y]
-                charcoal_count += 1
-            elif res.type == 'cloth' and cloth_count < MAX_CLOTH_SOURCES:
-                observation["cloth_locs"][cloth_count] = [res.x, res.y]
-                cloth_count += 1
-            elif res.type == 'murky_water' and murky_water_count < MAX_MURKY_WATER_SOURCES:
-                observation["murky_water_locs"][murky_water_count] = [res.x, res.y]
-                murky_water_count += 1
+        for res_type in resource_types_to_spawn:
+            if not all_coords:
+                # This might happen if grid is too small for agent + all resources
+                print(f"Warning: Not enough space to place all resources. Grid size: {self.grid_width}x{self.grid_height}, trying to place {res_type}")
+                break 
+            
+            res_x, res_y = all_coords.pop()
+            new_resource = Resource(res_x, res_y, type=res_type)
+            self.resources.append(new_resource)
+            place_entity(self.grid, new_resource, RESOURCE, x=new_resource.x, y=new_resource.y)
+        
+        observation = self._get_observation()
         info = {}
 
         return observation, info
@@ -201,236 +240,188 @@ class SierraEnv(gym.Env):
         truncated = False
         info = {}
 
-        # Decrement agent needs
-        hunger_decay = 0.1
-        thirst_decay = 0.1
-        if self.agent.has_shelter:
-            hunger_decay *= 0.75 # 25% reduction
-            thirst_decay *= 0.75 # 25% reduction
-
-        # Slightly increase decay during night
-        if not self.is_day:
-            hunger_decay *= 1.2
-            thirst_decay *= 1.2
-
-        self.agent.hunger -= hunger_decay
-        self.agent.thirst -= thirst_decay
+        self._update_agent_needs()
 
         # Store current position
         old_x, old_y = self.agent.x, self.agent.y
-
-        if action < 4: # Movement actions
-            # Calculate new position based on action
-            if action == ACTION_MOVE_UP:
-                new_x, new_y = old_x, old_y - 1
-            elif action == ACTION_MOVE_DOWN:
-                new_x, new_y = old_x, old_y + 1
-            elif action == ACTION_MOVE_LEFT:
-                new_x, new_y = old_x - 1, old_y
-            elif action == ACTION_MOVE_RIGHT:
-                new_x, new_y = old_x + 1, old_y
-            else: # Should not happen given the if condition
-                new_x, new_y = old_x, old_y
-
-            # Check for boundary collision
-            if check_boundaries(self.grid, new_x, new_y):
-                # Check for resource collection
-                cell_content = get_cell_content(self.grid, new_x, new_y)
-                if cell_content == RESOURCE:
-                    collected_resource = None
-                    for res in self.resources:
-                        if res.x == new_x and res.y == new_y:
-                            collected_resource = res
-                            break
-
-                    if collected_resource:
-                        if collected_resource.type == 'food':
-                            reward += 0.5 # Reward for collecting food
-                            self.agent.hunger = min(100, self.agent.hunger + 30) # Replenish hunger
-                        elif collected_resource.type == 'water':
-                            reward += 0.5 # Reward for collecting water
-                            self.agent.thirst = min(100, self.agent.thirst + 30) # Replenish thirst
-                        elif collected_resource.type == 'murky_water':
-                            current_amount = self.agent.inventory.get('murky_water', 0)
-                            self.agent.inventory['murky_water'] = min(current_amount + 1, MAX_INVENTORY_PER_ITEM)
-                            reward += 0.1 # Small reward for collecting murky water
-                        elif collected_resource.type == 'wood':
-                            amount_to_add = WOOD_COLLECTION_AXE_BONUS if self.agent.has_axe else 1
-                            current_amount = self.agent.inventory.get('wood', 0)
-                            self.agent.inventory['wood'] = min(current_amount + amount_to_add, MAX_INVENTORY_PER_ITEM)
-                            reward += 0.2 # Or adjust reward based on amount collected
-                        elif collected_resource.type in Resource.MATERIAL_TYPES: # Handles other materials like stone, charcoal, cloth
-                            current_amount = self.agent.inventory.get(collected_resource.type, 0)
-                            self.agent.inventory[collected_resource.type] = min(current_amount + 1, MAX_INVENTORY_PER_ITEM)
-                            reward += 0.2 # Specific reward for collecting other materials
-                        
-                        # Remove collected resource from grid and list
-                        self.resources.remove(collected_resource)
-                        self.grid[new_y, new_x] = EMPTY
-
-                # Move agent if the new position is empty
-                if get_cell_content(self.grid, new_x, new_y) == EMPTY:
-                    self.grid[old_y, old_x] = EMPTY # Clear old position
-                    self.agent.x, self.agent.y = new_x, new_y
-                    place_entity(self.grid, self.agent, AGENT)
-            else:
-                # Collision with wall/boundary
-                reward -= 0.1 # Small penalty for hitting wall
-                # Agent stays in the same position
+        action_specific_reward = 0 # Initialize reward for this step's action
         
-        elif action == ACTION_CRAFT_SHELTER:
-            recipe = CRAFTING_RECIPES["basic_shelter"]
-            can_craft = True
-            if not self.agent.has_shelter: # Check if shelter already exists
-                for material, required_amount in recipe.items():
-                    if self.agent.inventory.get(material, 0) < required_amount:
-                        can_craft = False
-                        break
-                if can_craft:
-                    for material, required_amount in recipe.items():
-                        self.agent.inventory[material] -= required_amount
-                    self.agent.has_shelter = True
-                    reward += CRAFTING_REWARDS["basic_shelter"]
-            # If already has shelter or cannot craft, default step penalty applies
-            
-        elif action == ACTION_CRAFT_FILTER:
-            recipe = CRAFTING_RECIPES["water_filter"]
-            can_craft = True
-            if self.agent.water_filters_available < MAX_WATER_FILTERS: # Check if max filters reached
-                for material, required_amount in recipe.items():
-                    if self.agent.inventory.get(material, 0) < required_amount:
-                        can_craft = False
-                        break
-                if can_craft:
-                    for material, required_amount in recipe.items():
-                        self.agent.inventory[material] -= required_amount
-                    self.agent.water_filters_available += 1
-                    reward += CRAFTING_REWARDS["water_filter"]
-            # If max filters reached or cannot craft, default step penalty applies
+        # Convert action value to Actions Enum member if necessary for logic
+        # current_action = Actions(action) # This line assumes action is an int
 
-        elif action == ACTION_CRAFT_AXE:
-            recipe = CRAFTING_RECIPES["crude_axe"]
-            can_craft = True
-            if not self.agent.has_axe: # Check if axe already exists
-                for material, required_amount in recipe.items():
-                    if self.agent.inventory.get(material, 0) < required_amount:
-                        can_craft = False
-                        break
-                if can_craft:
-                    for material, required_amount in recipe.items():
-                        self.agent.inventory[material] -= required_amount
-                    self.agent.has_axe = True
-                    reward += CRAFTING_REWARDS["crude_axe"]
-            # If already has axe or cannot craft, default step penalty applies
+        if action < Actions.CRAFT_SHELTER.value: # Movement actions
+            action_specific_reward, (new_agent_x, new_agent_y) = self._handle_movement_and_collection(action, old_x, old_y)
+            self.agent.x, self.agent.y = new_agent_x, new_agent_y 
+            reward += action_specific_reward
+        
+        elif action in [Actions.CRAFT_SHELTER.value, Actions.CRAFT_FILTER.value, Actions.CRAFT_AXE.value]:
+            action_specific_reward = self._handle_crafting(action)
+            reward += action_specific_reward
 
-        elif action == ACTION_PURIFY_WATER:
-            if self.agent.water_filters_available > 0 and self.agent.inventory.get('murky_water', 0) > 0:
-                self.agent.water_filters_available -= 1
-                self.agent.inventory['murky_water'] -= 1
-                self.agent.thirst = min(100, self.agent.thirst + PURIFIED_WATER_THIRST_REPLENISH)
-                reward += 0.3 # Reward for successful purification
-            # If no filter or no murky water, default step penalty applies
+        elif action == Actions.PURIFY_WATER.value:
+            action_specific_reward = self._handle_purify_water(action)
+            reward += action_specific_reward
             
         else:
-            raise ValueError("Invalid action")
+            raise ValueError(f"Invalid action: {action}")
 
         # Check for low needs penalty (optional)
-        if self.agent.hunger <= 20 or self.agent.thirst <= 20:
+        if self.agent.hunger <= GAMEPLAY_CONSTANTS["LOW_NEED_THRESHOLD"] or \
+           self.agent.thirst <= GAMEPLAY_CONSTANTS["LOW_NEED_THRESHOLD"]:
              reward -= 0.05 # Small penalty for low needs
 
         # Check for death (hunger or thirst depletion)
-        if self.agent.hunger <= 0 or self.agent.thirst <= 0:
+        if self.agent.is_dead():
             terminated = True
             reward -= 1.0 # Large penalty for death
 
         # Update environmental state
         self.world_time += 1
-        cycle_time = DAY_LENGTH + NIGHT_LENGTH
-        self.is_day = (self.world_time % cycle_time) < DAY_LENGTH
+        cycle_length = TIME_CONSTANTS["DAY_LENGTH"] + TIME_CONSTANTS["NIGHT_LENGTH"]
+        self.is_day = (self.world_time % cycle_length) < TIME_CONSTANTS["DAY_LENGTH"]
 
         # Basic weather transition
-        if self.world_time % WEATHER_TRANSITION_STEPS == 0:
-             self.current_weather = self.np_random.choice(WEATHER_TYPES)
+        if self.world_time % ENVIRONMENT_CYCLE_CONSTANTS["WEATHER_TRANSITION_STEPS"] == 0:
+             self.current_weather = self.np_random.choice(ENVIRONMENT_CYCLE_CONSTANTS["WEATHER_TYPES"])
 
         # Basic season transition
-        if self.world_time % SEASON_TRANSITION_STEPS == 0:
-             self.current_season = self.np_random.choice(SEASON_TYPES)
-
-
-        # Prepare observation
-        food_locs = [(-1, -1)] * 2
-        water_locs = [(-1, -1)] * 1
-        wood_locs = [(-1, -1)] * MAX_WOOD_SOURCES
-        stone_locs = [(-1, -1)] * MAX_STONE_SOURCES
-        charcoal_locs = [(-1, -1)] * MAX_CHARCOAL_SOURCES
-        cloth_locs = [(-1, -1)] * MAX_CLOTH_SOURCES
-        murky_water_locs = [(-1,-1)] * MAX_MURKY_WATER_SOURCES
-        food_count = 0
-        water_count = 0
-        wood_count = 0
-        stone_count = 0
-        charcoal_count = 0
-        cloth_count = 0
-        murky_water_count = 0
-
-        for res in self.resources:
-            if res.type == 'food' and food_count < 2:
-                food_locs[food_count] = (res.x, res.y)
-                food_count += 1
-            elif res.type == 'water' and water_count < 1:
-                water_locs[water_count] = (res.x, res.y)
-                water_count += 1
-            elif res.type == 'wood' and wood_count < MAX_WOOD_SOURCES:
-                wood_locs[wood_count] = (res.x, res.y)
-                wood_count += 1
-            elif res.type == 'stone' and stone_count < MAX_STONE_SOURCES:
-                stone_locs[stone_count] = (res.x, res.y)
-                stone_count += 1
-            elif res.type == 'charcoal' and charcoal_count < MAX_CHARCOAL_SOURCES:
-                charcoal_locs[charcoal_count] = (res.x, res.y)
-                charcoal_count += 1
-            elif res.type == 'cloth' and cloth_count < MAX_CLOTH_SOURCES:
-                cloth_locs[cloth_count] = (res.x, res.y)
-                cloth_count += 1
-            elif res.type == 'murky_water' and murky_water_count < MAX_MURKY_WATER_SOURCES:
-                murky_water_locs[murky_water_count] = (res.x, res.y)
-                murky_water_count += 1
-
-        observation = {
-            "agent_pos": np.array([self.agent.x, self.agent.y], dtype=int),
-            "food_locs": np.array(food_locs, dtype=int),
-            "water_locs": np.array(water_locs, dtype=int),
-            "wood_locs": np.array(wood_locs, dtype=int),
-            "stone_locs": np.array(stone_locs, dtype=int),
-            "charcoal_locs": np.array(charcoal_locs, dtype=int),
-            "cloth_locs": np.array(cloth_locs, dtype=int),
-            "murky_water_locs": np.array(murky_water_locs, dtype=int),
-            "hunger": np.array([self.agent.hunger], dtype=np.float32),
-            "thirst": np.array([self.agent.thirst], dtype=np.float32),
-            "time_of_day": int(self.is_day),
-            "current_weather": WEATHER_TYPES.index(self.current_weather),
-            "current_season": SEASON_TYPES.index(self.current_season),
-            "inv_wood": np.array([self.agent.inventory.get("wood", 0)], dtype=int),
-            "inv_stone": np.array([self.agent.inventory.get("stone", 0)], dtype=int),
-            "inv_charcoal": np.array([self.agent.inventory.get("charcoal", 0)], dtype=int),
-            "inv_cloth": np.array([self.agent.inventory.get("cloth", 0)], dtype=int),
-            "inv_murky_water": np.array([self.agent.inventory.get("murky_water", 0)], dtype=int),
-            "has_shelter": int(self.agent.has_shelter),
-            "has_axe": int(self.agent.has_axe),
-            "water_filters_available": np.array([self.agent.water_filters_available], dtype=int)
-        }
+        if self.world_time % ENVIRONMENT_CYCLE_CONSTANTS["SEASON_TRANSITION_STEPS"] == 0:
+             self.current_season = self.np_random.choice(ENVIRONMENT_CYCLE_CONSTANTS["SEASON_TYPES"])
+        
+        observation = self._get_observation()
 
         return observation, reward, terminated, truncated, info
 
     def render(self):
+        """
+        Basic text-based rendering for debugging purposes.
+        Note: The 'W' for WALL is a legacy character; WALL entities are not currently implemented 
+        in grid generation or entity types, so 'W' will not appear unless manually added to the 
+        grid for specific testing scenarios.
+        For advanced visualization, see project documentation regarding Matplotlib/TensorBoard integration
+        for richer game state and performance visualization.
+        """
         if self.grid is None:
             return "Environment not initialized."
 
         output = ""
         for row in self.grid:
+            # Assuming EMPTY, WALL, AGENT, RESOURCE are defined in .grid and imported
             output += " ".join(["." if cell == EMPTY else "W" if cell == WALL else "A" if cell == AGENT else "R" for cell in row]) + "\n"
         print(output)
         return output
 
     def close(self):
         pass # No resources to close for this simple environment
+
+    # --- Core Logic Methods Implementation ---
+
+    def _update_agent_needs(self):
+        """Delegates updating agent's hunger and thirst to the Agent object."""
+        # The environment_has_shelter_effect is self.agent.has_shelter itself
+        self.agent.update_needs(self.is_day, self.agent.has_shelter)
+
+    def _handle_movement_and_collection(self, action, old_x, old_y):
+        """Handles agent movement, boundary checks, and resource collection."""
+        new_x, new_y = old_x, old_y
+        action_specific_reward = 0.0
+
+        if action == Actions.MOVE_UP.value:
+            new_y -= 1
+        elif action == Actions.MOVE_DOWN.value:
+            new_y += 1
+        elif action == Actions.MOVE_LEFT.value:
+            new_x -= 1
+        elif action == Actions.MOVE_RIGHT.value:
+            new_x += 1
+
+        if not check_boundaries(self.grid, new_x, new_y):
+            return 0.0, (old_x, old_y)  # No movement, no reward change from this action part
+
+        # Check for resource at new location
+        if get_cell_content(self.grid, new_x, new_y) == RESOURCE:
+            resource_to_collect = None
+            for res in self.resources:
+                if res.x == new_x and res.y == new_y:
+                    resource_to_collect = res
+                    break
+            
+            if resource_to_collect:
+                collected_amount = 0
+                if resource_to_collect.type == 'wood':
+                    collected_amount = GAMEPLAY_CONSTANTS['WOOD_COLLECTION_AXE_BONUS'] if self.agent.has_axe else 1
+                elif resource_to_collect.type in Resource.MATERIAL_TYPES: # Includes food, water now
+                    collected_amount = 1 # Assuming 1 for other resources
+                
+                # Use agent's method to add item
+                self.agent.add_item(resource_to_collect.type, collected_amount)
+                
+                # Assign reward based on resource type
+                # Assuming food/water collection might have direct effects on hunger/thirst later,
+                # or their value is just for scoring here.
+                if resource_to_collect.type == 'food':
+                    action_specific_reward = 0.5 
+                    # Potentially: self.agent.replenish_hunger(SOME_AMOUNT) if not just inventory
+                elif resource_to_collect.type == 'water':
+                    action_specific_reward = 0.5
+                    # Potentially: self.agent.replenish_thirst(SOME_AMOUNT) if not just inventory
+                elif resource_to_collect.type in ['wood', 'stone', 'charcoal', 'cloth', 'murky_water']:
+                     action_specific_reward = 0.1 
+                
+                self.resources.remove(resource_to_collect)
+                self.grid[new_y, new_x] = EMPTY # Grid cell becomes empty first
+
+        # Update grid: clear old agent position, place agent in new position
+        self.grid[old_y, old_x] = EMPTY
+        place_entity(self.grid, self.agent, AGENT, x=new_x, y=new_y) # Agent entity itself is updated outside
+
+        return action_specific_reward, (new_x, new_y)
+
+    def _handle_crafting(self, action):
+        """Handles crafting attempts by the agent."""
+        item_name = None
+        if action == Actions.CRAFT_SHELTER.value:
+            item_name = "basic_shelter"
+        elif action == Actions.CRAFT_FILTER.value:
+            item_name = "water_filter"
+        elif action == Actions.CRAFT_AXE.value:
+            item_name = "crude_axe"
+        else:
+            return 0.0 # Should not happen if action validation is correct
+
+        recipe = CRAFTING_RECIPES[item_name]
+
+        # Check preconditions using agent's state
+        if item_name == "basic_shelter" and self.agent.has_shelter:
+            return 0.0 
+        if item_name == "crude_axe" and self.agent.has_axe:
+            return 0.0
+        if item_name == "water_filter" and self.agent.water_filters_available >= INVENTORY_CONSTANTS['MAX_WATER_FILTERS']:
+            return 0.0
+
+        # Check materials using agent's method
+        for material, required_amount in recipe.items():
+            if not self.agent.has_item(material, required_amount):
+                return 0.0 # Not enough materials
+
+        # If successful, deduct materials and update agent state using agent's methods
+        for material, required_amount in recipe.items():
+            self.agent.remove_item(material, required_amount)
+        
+        if item_name == "basic_shelter":
+            self.agent.set_has_shelter(True)
+        elif item_name == "crude_axe":
+            self.agent.set_has_axe(True)
+        elif item_name == "water_filter":
+            self.agent.add_water_filter() # Defaults to adding 1
+            
+        return CRAFTING_REWARDS[item_name]
+
+    def _handle_purify_water(self, action_value): # action_value is Actions.PURIFY_WATER.value
+        """Handles water purification attempts using agent's methods."""
+        if self.agent.water_filters_available > 0 and self.agent.get_item_count("murky_water") > 0:
+            self.agent.use_water_filter()
+            self.agent.remove_item("murky_water", 1)
+            self.agent.replenish_thirst(GAMEPLAY_CONSTANTS['PURIFIED_WATER_THIRST_REPLENISH'])
+            return 0.3 # Reward for successful purification
+        return 0.0

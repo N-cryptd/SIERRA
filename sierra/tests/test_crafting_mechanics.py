@@ -1,10 +1,11 @@
 import pytest
 import numpy as np
 from sierra.environment.core import (
-    SierraEnv, ACTION_CRAFT_SHELTER, ACTION_CRAFT_FILTER, ACTION_CRAFT_AXE,
-    ACTION_PURIFY_WATER, WOOD_COLLECTION_AXE_BONUS, PURIFIED_WATER_THIRST_REPLENISH,
-    MAX_INVENTORY_PER_ITEM, MAX_WATER_FILTERS, CRAFTING_REWARDS,
-    RESOURCE, EMPTY, AGENT, ACTION_MOVE_RIGHT # Assuming ACTION_MOVE_RIGHT is 3
+    SierraEnv, Actions, # Replaced individual actions with Actions enum
+    GAMEPLAY_CONSTANTS, # Contains WOOD_COLLECTION_AXE_BONUS, PURIFIED_WATER_THIRST_REPLENISH
+    INVENTORY_CONSTANTS, # Contains MAX_INVENTORY_PER_ITEM, MAX_WATER_FILTERS
+    CRAFTING_RECIPES, CRAFTING_REWARDS, # CRAFTING_RECIPES is not used here but good to note
+    RESOURCE, EMPTY, AGENT
 )
 from sierra.environment.entities import Resource, Agent
 
@@ -53,7 +54,7 @@ class TestCraftingMechanics:
         initial_wood = self.env.agent.inventory["wood"]
         initial_stone = self.env.agent.inventory["stone"]
 
-        obs, reward, _, _, _ = self.env.step(ACTION_CRAFT_SHELTER)
+        obs, reward, _, _, _ = self.env.step(Actions.CRAFT_SHELTER.value)
 
         assert self.env.agent.inventory["wood"] == initial_wood - 4
         assert self.env.agent.inventory["stone"] == initial_stone - 2
@@ -67,7 +68,7 @@ class TestCraftingMechanics:
         initial_cloth = self.env.agent.inventory["cloth"]
         initial_stone = self.env.agent.inventory["stone"]
 
-        obs, reward, _, _, _ = self.env.step(ACTION_CRAFT_FILTER)
+        obs, reward, _, _, _ = self.env.step(Actions.CRAFT_FILTER.value)
 
         assert self.env.agent.inventory["charcoal"] == initial_charcoal - 2
         assert self.env.agent.inventory["cloth"] == initial_cloth - 1
@@ -81,7 +82,7 @@ class TestCraftingMechanics:
         initial_stone = self.env.agent.inventory["stone"]
         initial_wood = self.env.agent.inventory["wood"]
 
-        obs, reward, _, _, _ = self.env.step(ACTION_CRAFT_AXE)
+        obs, reward, _, _, _ = self.env.step(Actions.CRAFT_AXE.value)
 
         assert self.env.agent.inventory["stone"] == initial_stone - 2
         assert self.env.agent.inventory["wood"] == initial_wood - 1
@@ -96,7 +97,7 @@ class TestCraftingMechanics:
         set_inventory(self.env.agent, {"wood": 1, "stone": 1}) # Insufficient
         initial_inventory = self.env.agent.inventory.copy()
 
-        obs, reward, _, _, _ = self.env.step(ACTION_CRAFT_SHELTER)
+        obs, reward, _, _, _ = self.env.step(Actions.CRAFT_SHELTER.value)
 
         assert self.env.agent.inventory["wood"] == initial_inventory["wood"]
         assert self.env.agent.inventory["stone"] == initial_inventory["stone"]
@@ -108,7 +109,7 @@ class TestCraftingMechanics:
         set_inventory(self.env.agent, {"charcoal": 1, "cloth": 0, "stone": 1}) # Insufficient
         initial_inventory = self.env.agent.inventory.copy()
 
-        obs, reward, _, _, _ = self.env.step(ACTION_CRAFT_FILTER)
+        obs, reward, _, _, _ = self.env.step(Actions.CRAFT_FILTER.value)
 
         assert self.env.agent.inventory["charcoal"] == initial_inventory["charcoal"]
         assert self.env.agent.inventory["cloth"] == initial_inventory["cloth"]
@@ -121,7 +122,7 @@ class TestCraftingMechanics:
         set_inventory(self.env.agent, {"stone": 1, "wood": 0}) # Insufficient
         initial_inventory = self.env.agent.inventory.copy()
 
-        obs, reward, _, _, _ = self.env.step(ACTION_CRAFT_AXE)
+        obs, reward, _, _, _ = self.env.step(Actions.CRAFT_AXE.value)
 
         assert self.env.agent.inventory["stone"] == initial_inventory["stone"]
         assert self.env.agent.inventory["wood"] == initial_inventory["wood"]
@@ -134,11 +135,11 @@ class TestCraftingMechanics:
     # -------------------------------------------
     def test_craft_shelter_fail_already_owned(self):
         set_inventory(self.env.agent, {"wood": 8, "stone": 4}) # Enough for two
-        self.env.step(ACTION_CRAFT_SHELTER) # First successful craft
+        self.env.step(Actions.CRAFT_SHELTER.value) # First successful craft
         assert self.env.agent.has_shelter is True
         
         initial_inventory_after_first_craft = self.env.agent.inventory.copy()
-        obs, reward, _, _, _ = self.env.step(ACTION_CRAFT_SHELTER) # Attempt second craft
+        obs, reward, _, _, _ = self.env.step(Actions.CRAFT_SHELTER.value) # Attempt second craft
 
         assert self.env.agent.inventory == initial_inventory_after_first_craft # No change
         assert self.env.agent.has_shelter is True # Still true
@@ -147,11 +148,11 @@ class TestCraftingMechanics:
 
     def test_craft_axe_fail_already_owned(self):
         set_inventory(self.env.agent, {"stone": 4, "wood": 2}) # Enough for two
-        self.env.step(ACTION_CRAFT_AXE) # First successful craft
+        self.env.step(Actions.CRAFT_AXE.value) # First successful craft
         assert self.env.agent.has_axe is True
 
         initial_inventory_after_first_craft = self.env.agent.inventory.copy()
-        obs, reward, _, _, _ = self.env.step(ACTION_CRAFT_AXE) # Attempt second craft
+        obs, reward, _, _, _ = self.env.step(Actions.CRAFT_AXE.value) # Attempt second craft
 
         assert self.env.agent.inventory == initial_inventory_after_first_craft
         assert self.env.agent.has_axe is True
@@ -159,20 +160,20 @@ class TestCraftingMechanics:
         assert reward == -0.01 # Only step penalty
 
     def test_craft_filter_fail_maxed(self):
-        set_inventory(self.env.agent, {"charcoal": 2 * MAX_WATER_FILTERS + 2, 
-                                     "cloth": 1 * MAX_WATER_FILTERS + 1, 
-                                     "stone": 1 * MAX_WATER_FILTERS + 1})
-        for _ in range(MAX_WATER_FILTERS):
-            _, _, _, _, _ = self.env.step(ACTION_CRAFT_FILTER)
+        set_inventory(self.env.agent, {"charcoal": 2 * INVENTORY_CONSTANTS['MAX_WATER_FILTERS'] + 2, 
+                                     "cloth": 1 * INVENTORY_CONSTANTS['MAX_WATER_FILTERS'] + 1, 
+                                     "stone": 1 * INVENTORY_CONSTANTS['MAX_WATER_FILTERS'] + 1})
+        for _ in range(INVENTORY_CONSTANTS['MAX_WATER_FILTERS']):
+            _, _, _, _, _ = self.env.step(Actions.CRAFT_FILTER.value)
         
-        assert self.env.agent.water_filters_available == MAX_WATER_FILTERS
+        assert self.env.agent.water_filters_available == INVENTORY_CONSTANTS['MAX_WATER_FILTERS']
         
         initial_inventory_after_max_crafts = self.env.agent.inventory.copy()
-        obs, reward, _, _, _ = self.env.step(ACTION_CRAFT_FILTER) # Attempt to craft one more
+        obs, reward, _, _, _ = self.env.step(Actions.CRAFT_FILTER.value) # Attempt to craft one more
 
         assert self.env.agent.inventory == initial_inventory_after_max_crafts
-        assert self.env.agent.water_filters_available == MAX_WATER_FILTERS
-        assert obs["water_filters_available"][0] == MAX_WATER_FILTERS
+        assert self.env.agent.water_filters_available == INVENTORY_CONSTANTS['MAX_WATER_FILTERS']
+        assert obs["water_filters_available"][0] == INVENTORY_CONSTANTS['MAX_WATER_FILTERS']
         assert reward == -0.01 # Only step penalty
 
     # -------------------------------------------
@@ -199,7 +200,7 @@ class TestCraftingMechanics:
             # This will hit boundary if at edge, or move if not.
             # A better way: ensure agent doesn't collect anything.
             # Crafting actions (that fail) are good as they don't cause movement.
-            self.env.step(ACTION_CRAFT_SHELTER) # Agent already has shelter, so this will fail & not move
+            self.env.step(Actions.CRAFT_SHELTER.value) # Agent already has shelter, so this will fail & not move
 
         expected_hunger = initial_hunger - (expected_hunger_decay_per_step * num_steps)
         expected_thirst = initial_thirst - (expected_thirst_decay_per_step * num_steps)
@@ -220,7 +221,7 @@ class TestCraftingMechanics:
             expected_thirst_decay_no_shelter *= 1.2
 
         for i in range(num_steps):
-            self.env.step(ACTION_CRAFT_SHELTER) # Agent has no shelter, and likely no mats, so fails & no move
+            self.env.step(Actions.CRAFT_SHELTER.value) # Agent has no shelter, and likely no mats, so fails & no move
 
         expected_hunger_ns = initial_hunger_no_shelter - (expected_hunger_decay_no_shelter * num_steps)
         expected_thirst_ns = initial_thirst_no_shelter - (expected_thirst_decay_no_shelter * num_steps)
@@ -244,7 +245,7 @@ class TestCraftingMechanics:
 
         assert self.place_resource_near_agent("wood", agent_start_pos), "Failed to place wood for test"
         
-        self.env.step(ACTION_MOVE_RIGHT) # Collect wood
+        self.env.step(Actions.MOVE_RIGHT.value) # Collect wood
         assert self.env.agent.inventory["wood"] == 1
 
         # With axe
@@ -261,8 +262,8 @@ class TestCraftingMechanics:
 
         assert self.place_resource_near_agent("wood", agent_start_pos_axe), "Failed to place wood for axe test"
         
-        self.env.step(ACTION_MOVE_RIGHT) # Collect wood
-        assert self.env.agent.inventory["wood"] == WOOD_COLLECTION_AXE_BONUS
+        self.env.step(Actions.MOVE_RIGHT.value) # Collect wood
+        assert self.env.agent.inventory["wood"] == GAMEPLAY_CONSTANTS['WOOD_COLLECTION_AXE_BONUS']
 
 
     def test_water_filter_purify_action_success(self):
@@ -272,16 +273,16 @@ class TestCraftingMechanics:
         self.env.agent.thirst = 50 # Set thirst to a value that won't cap immediately
         
         initial_thirst = self.env.agent.thirst
-        obs, reward, _, _, _ = self.env.step(ACTION_PURIFY_WATER)
+        obs, reward, _, _, _ = self.env.step(Actions.PURIFY_WATER.value)
 
         assert self.env.agent.water_filters_available == 0
         assert self.env.agent.inventory["murky_water"] == 0
-        expected_thirst = min(100, initial_thirst + PURIFIED_WATER_THIRST_REPLENISH)
+        expected_thirst = min(100, initial_thirst + GAMEPLAY_CONSTANTS['PURIFIED_WATER_THIRST_REPLENISH'])
         # Account for the 0.1 thirst decay that happens in the step
-        assert self.env.agent.thirst == pytest.approx(expected_thirst - 0.1, abs=1e-5)
+        assert self.env.agent.thirst == pytest.approx(expected_thirst - 0.1, abs=1e-5) # Assuming _update_agent_needs runs
         assert obs["water_filters_available"][0] == 0
-        assert obs["inventory"]["murky_water"][0] == 0
-        assert obs["thirst"][0] == pytest.approx(expected_thirst - 0.1, abs=1e-5)
+        assert obs["inv_murky_water"][0] == 0 # Corrected obs key from "inventory" to "inv_murky_water"
+        assert obs["thirst"][0] == pytest.approx(expected_thirst - 0.1, abs=1e-5) # Assuming _update_agent_needs runs
         assert reward == 0.3 - 0.01 # Purify reward - step penalty
 
     def test_water_filter_purify_action_fail_no_filter(self):
@@ -291,7 +292,7 @@ class TestCraftingMechanics:
         initial_thirst = self.env.agent.thirst
         initial_murky_water = self.env.agent.inventory["murky_water"]
 
-        obs, reward, _, _, _ = self.env.step(ACTION_PURIFY_WATER)
+        obs, reward, _, _, _ = self.env.step(Actions.PURIFY_WATER.value)
 
         assert self.env.agent.water_filters_available == 0
         assert self.env.agent.inventory["murky_water"] == initial_murky_water
@@ -306,7 +307,7 @@ class TestCraftingMechanics:
         initial_thirst = self.env.agent.thirst
         initial_filters = self.env.agent.water_filters_available
 
-        obs, reward, _, _, _ = self.env.step(ACTION_PURIFY_WATER)
+        obs, reward, _, _, _ = self.env.step(Actions.PURIFY_WATER.value)
 
         assert self.env.agent.water_filters_available == initial_filters # No change
         assert self.env.agent.inventory["murky_water"] == 0
@@ -319,7 +320,7 @@ class TestCraftingMechanics:
     # -------------------------------------------
     def test_inventory_limits_wood(self):
         self.env.reset()
-        self.env.agent.inventory["wood"] = MAX_INVENTORY_PER_ITEM - 1
+        self.env.agent.inventory["wood"] = INVENTORY_CONSTANTS['MAX_INVENTORY_PER_ITEM'] - 1
         
         agent_pos = (self.env.agent.x, self.env.agent.y)
         if agent_pos[0] == self.env.grid_width -1: self.env.agent.x -=1; agent_pos = (self.env.agent.x, self.env.agent.y)
@@ -327,8 +328,8 @@ class TestCraftingMechanics:
         self.env.grid[agent_pos[1], agent_pos[0]+1] = EMPTY # ensure next cell is empty for resource
 
         assert self.place_resource_near_agent("wood", agent_pos), "Failed to place wood (1)"
-        self.env.step(ACTION_MOVE_RIGHT) # Collect first wood
-        assert self.env.agent.inventory["wood"] == MAX_INVENTORY_PER_ITEM
+        self.env.step(Actions.MOVE_RIGHT.value) # Collect first wood
+        assert self.env.agent.inventory["wood"] == INVENTORY_CONSTANTS['MAX_INVENTORY_PER_ITEM']
 
         # Agent is now at the position of the first resource. Place another one to its right.
         current_agent_pos = (self.env.agent.x, self.env.agent.y)
@@ -336,8 +337,8 @@ class TestCraftingMechanics:
              pytest.skip("Agent at edge, cannot place another resource to the right for this test logic")
 
         assert self.place_resource_near_agent("wood", current_agent_pos), "Failed to place wood (2)"
-        self.env.step(ACTION_MOVE_RIGHT) # Attempt to collect second wood
-        assert self.env.agent.inventory["wood"] == MAX_INVENTORY_PER_ITEM # Still maxed
+        self.env.step(Actions.MOVE_RIGHT.value) # Attempt to collect second wood
+        assert self.env.agent.inventory["wood"] == INVENTORY_CONSTANTS['MAX_INVENTORY_PER_ITEM'] # Still maxed
 
     # -------------------------------------------
     # 6. Test Murky Water Collection
@@ -354,9 +355,9 @@ class TestCraftingMechanics:
 
         assert self.place_resource_near_agent("murky_water", agent_pos), "Failed to place murky_water"
         
-        obs, reward, _, _, _ = self.env.step(ACTION_MOVE_RIGHT) # Collect murky water
+        obs, reward, _, _, _ = self.env.step(Actions.MOVE_RIGHT.value) # Collect murky water
         
         assert self.env.agent.inventory["murky_water"] == 1
-        assert obs["inventory"]["murky_water"][0] == 1
+        assert obs["inv_murky_water"][0] == 1 # Corrected obs key
         # Expected reward for murky water collection is 0.1, plus step penalty -0.01
         assert abs(reward - (0.1 - 0.01)) < 1e-5
