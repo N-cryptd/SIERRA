@@ -38,6 +38,7 @@ class Agent:
         self.has_shelter = False
         self.has_axe = False
         self.axe_durability = 0
+        self.stamina = 100
         self.water_filters_available = 0
 
     # --- Inventory Management ---
@@ -126,7 +127,7 @@ class Agent:
 
 class Resource:
     """Represents a resource in the environment."""
-    MATERIAL_TYPES = ['wood', 'stone', 'charcoal', 'cloth', 'murky_water', 'food', 'water', 'sharpening_stone'] # Added food and water for inventory tracking consistency
+    MATERIAL_TYPES = ['wood', 'stone', 'charcoal', 'cloth', 'murky_water', 'food', 'water', 'sharpening_stone', 'plank', 'shelter_frame'] # Added food and water for inventory tracking consistency
 
     def __init__(self, x, y, type='food'):
         self.x = x

@@ -1,0 +1,77 @@
+# SIERRA Environment Configuration
+
+# --- Time & Cycles ---
+time_constants:
+  DAY_LENGTH: 100
+  NIGHT_LENGTH: 50
+
+# --- Resource Generation & Limits ---
+resource_limits:
+  MAX_FOOD_SOURCES: 2
+  MAX_WATER_SOURCES: 1
+  MAX_WOOD_SOURCES: 2
+  MAX_STONE_SOURCES: 2
+  MAX_CHARCOAL_SOURCES: 1
+  MAX_CLOTH_SOURCES: 1
+  MAX_MURKY_WATER_SOURCES: 2
+  MAX_SHARPENING_STONES: 1
+  MAX_THREATS: 2
+
+# --- Inventory & Items ---
+inventory_constants:
+  MAX_INVENTORY_PER_ITEM: 10
+  MAX_WATER_FILTERS: 5
+
+# --- Crafting System ---
+crafting:
+  recipes:
+    # Intermediate Components
+    plank: { wood: 1 }
+    shelter_frame: { plank: 4, stone: 2 }
+
+    # Final Items
+    basic_shelter: { shelter_frame: 1, cloth: 2 }
+    water_filter: { charcoal: 2, cloth: 1, stone: 1 }
+    crude_axe: { stone: 2, wood: 1 }
+
+  rewards:
+    # Give small rewards for crafting components to guide the agent
+    plank: 0.1
+    shelter_frame: 1.0
+    
+    # Final item rewards
+    basic_shelter: 10.0 # Increased reward for the more complex process
+    water_filter: 0.5
+    crude_axe: 1.0
+
+# --- Gameplay Modifiers & Agent Physics ---
+gameplay:
+  INITIAL_HUNGER: 100.0
+  INITIAL_THIRST: 100.0
+  MAX_HUNGER: 100.0
+  MAX_THIRST: 100.0
+  PURIFIED_WATER_THIRST_REPLENISH: 40
+  WOOD_COLLECTION_AXE_BONUS: 2
+  LOW_NEED_THRESHOLD: 20
+  THREAT_DAMAGE: 10 # New constant for damage from threats
+  AXE_DURABILITY: 100
+  AXE_DURABILITY_DECAY: 1
+  RESOURCE_RESPAWN_TIME: 100
+
+  # Decay multipliers
+  decay:
+    BASE_DECAY: 0.1
+    SHELTER_MULTIPLIER: 0.75
+    NIGHT_MULTIPLIER: 1.2
+    NIGHT_NO_SHELTER_EXTRA_MULTIPLIER: 1.5
+
+# --- Environment Cycles ---
+environment_cycles:
+  WEATHER_TYPES: ['clear', 'rainy', 'cloudy']
+  SEASON_TYPES: ['spring', 'summer', 'autumn', 'winter']
+  WEATHER_TRANSITION_STEPS: 200
+  SEASON_TRANSITION_STEPS: 1000
+
+# --- Agent Field of View ---
+agent:
+  PARTIAL_OBS_SIZE: 5 # e.g., 5 for a 5x5 view

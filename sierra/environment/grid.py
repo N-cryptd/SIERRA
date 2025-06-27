@@ -7,6 +7,11 @@ AGENT = 2
 RESOURCE = 3
 THREAT = 4
 
+# Terrain Types
+PLAINS = 0
+FOREST = 1
+ROCKY = 2
+
 def create_grid(width, height):
     """Creates a new grid of specified dimensions."""
     return np.full((height, width), EMPTY, dtype=int)
