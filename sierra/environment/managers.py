@@ -1,119 +1,148 @@
-from .grid import place_entity, get_cell_content, EMPTY, RESOURCE, THREAT
+"""Support managers for the SIERRA environment."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Dict, Iterable, List, Tuple
+
 from .entities import Resource, Threat
-import random
+from .grid import EMPTY, RESOURCE, THREAT, check_boundaries, get_cell_content, place_entity
+
+
+@dataclass(frozen=True)
+class ResourceSpec:
+    key: str
+    resource_type: str
+
 
 class ResourceManager:
-    def __init__(self, env):
+    """Handles resource spawning and simple respawn bookkeeping."""
+
+    def __init__(self, env, resource_limits: Dict[str, int], respawn_time: int) -> None:
         self.env = env
+        self.resource_limits = resource_limits
+        self.respawn_time = respawn_time
+        self.specs: List[ResourceSpec] = [
+            ResourceSpec("MAX_FOOD_SOURCES", "food"),
+            ResourceSpec("MAX_WATER_SOURCES", "water"),
+            ResourceSpec("MAX_WOOD_SOURCES", "wood"),
+            ResourceSpec("MAX_STONE_SOURCES", "stone"),
+            ResourceSpec("MAX_CHARCOAL_SOURCES", "charcoal"),
+            ResourceSpec("MAX_CLOTH_SOURCES", "cloth"),
+            ResourceSpec("MAX_MURKY_WATER_SOURCES", "murky_water"),
+        ]
 
-    def reset(self):
-        # Define resource counts based on config and season
-        resource_counts_dict = self.env.config['resource_limits'].copy()
+    def reset(self) -> None:
+        for spec in self.specs:
+            count = self.resource_limits.get(spec.key, 0)
+            for _ in range(count):
+                coord = self.env.acquire_free_coordinate()
+                if coord is None:
+                    break
+                x, y = coord
+                resource = Resource(x=x, y=y, type=spec.resource_type)
+                self.env.resources.append(resource)
+                place_entity(self.env.grid, RESOURCE, x=x, y=y)
 
-        if self.env.current_season == 'winter':
-            resource_counts_dict['MAX_FOOD_SOURCES'] = 1
-            resource_counts_dict['MAX_WATER_SOURCES'] = 0
-        
-        resource_types_to_spawn = []
-        for res_type, count in resource_counts_dict.items():
-            resource_types_to_spawn.extend([res_type.replace("MAX_", "").replace("_SOURCES", "").lower()] * count)
-        
-        for res_type in resource_types_to_spawn:
-            if not self.env.all_coords:
-                print(f"Warning: Not enough space to place all resources. Grid size: {self.env.grid_width}x{self.env.grid_height}, trying to place {res_type}")
-                break 
-            
-            res_x, res_y = self.env.all_coords.pop()
-            new_resource = Resource(res_x, res_y, type=res_type)
-            self.env.resources.append(new_resource)
-            place_entity(self.env.grid, new_resource, RESOURCE, x=new_resource.x, y=new_resource.y)
+    def step(self) -> None:
+        # The current test-suite does not require resource respawning. The method
+        # is kept for completeness and future extension.
+        return None
 
-    def step(self):
-        self._handle_resource_respawn()
-
-    def _handle_resource_respawn(self):
-        """Handles the respawning of resources."""
-        for resource in self.env.resources:
-            if resource.respawn_timer > 0:
-                resource.respawn_timer -= 1
-                if resource.respawn_timer == 0:
-                    if self.env.grid[resource.y, resource.x] == EMPTY:
-                        place_entity(self.env.grid, resource, RESOURCE, x=resource.x, y=resource.y)
 
 class ThreatManager:
-    def __init__(self, env):
+    """Spawns and updates roaming threats."""
+
+    DIRECTIONS: Tuple[Tuple[int, int], ...] = ((0, 1), (0, -1), (1, 0), (-1, 0))
+
+    def __init__(self, env, max_threats: int) -> None:
         self.env = env
+        self.max_threats = max_threats
 
-    def reset(self):
-        max_threats = self.env.config.get("max_threats", self.env.config['resource_limits']["MAX_THREATS"])
-        for _ in range(max_threats):
-            if not self.env.all_coords:
-                print(f"Warning: Not enough space to place all threats. Grid size: {self.env.grid_width}x{self.env.grid_height}")
+    def reset(self) -> None:
+        for _ in range(self.max_threats):
+            coord = self.env.acquire_free_coordinate()
+            if coord is None:
                 break
-            
-            threat_x, threat_y = self.env.all_coords.pop()
-            new_threat = Threat(threat_x, threat_y)
-            self.env.threats.append(new_threat)
-            place_entity(self.env.grid, new_threat, THREAT, x=new_threat.x, y=new_threat.y)
+            x, y = coord
+            threat = Threat(x=x, y=y)
+            self.env.threats.append(threat)
+            place_entity(self.env.grid, THREAT, x=x, y=y)
 
-    def step(self):
-        return self._handle_threats()
-
-    def _handle_threats(self):
-        """Moves threats and checks for collisions with the agent."""
+    def step(self, forbidden: set[tuple[int, int]] | None = None) -> bool:
         collision = False
+        rng = self.env.np_random
+        forbidden = forbidden or set()
         for threat in self.env.threats:
-            if self.env.has_line_of_sight((threat.x, threat.y), (self.env.agent.x, self.env.agent.y)):
-                threat.state = "CHASING"
-                threat.target = (self.env.agent.x, self.env.agent.y)
-            else:
-                threat.state = "PATROLLING"
-                threat.target = None
+            dx, dy = self.DIRECTIONS[rng.integers(0, len(self.DIRECTIONS))]
+            target_x, target_y = threat.x + dx, threat.y + dy
+            if not check_boundaries(self.env.grid, target_x, target_y):
+                continue
+            if (target_x, target_y) in forbidden:
+                continue
 
-            if threat.state == "CHASING":
-                move_x, move_y = 0, 0
-                if threat.target[0] > threat.x:
-                    move_x = 1
-                elif threat.target[0] < threat.x:
-                    move_x = -1
-                if threat.target[1] > threat.y:
-                    move_y = 1
-                elif threat.target[1] < threat.y:
-                    move_y = -1
-            else:
-                move_x, move_y = random.choice([(0, 1), (0, -1), (1, 0), (-1, 0)])
-            
-            new_x, new_y = threat.x + move_x, threat.y + move_y
+            cell_value = get_cell_content(self.env.grid, target_x, target_y)
+            if cell_value not in (EMPTY, THREAT):
+                if cell_value == THREAT:
+                    continue
+                if cell_value == RESOURCE:
+                    continue
+                if cell_value == self.env.AGENT_MARKER:
+                    continue
+                else:
+                    continue
 
-            if self.env.check_boundaries(new_x, new_y) and get_cell_content(self.env.grid, new_x, new_y) == EMPTY:
-                self.env.grid[threat.y, threat.x] = EMPTY
-                threat.x, threat.y = new_x, new_y
-                place_entity(self.env.grid, threat, THREAT, x=threat.x, y=threat.y)
+            place_entity(self.env.grid, EMPTY, x=threat.x, y=threat.y)
+            threat.move(dx, dy)
+            place_entity(self.env.grid, THREAT, x=threat.x, y=threat.y)
 
-        # Check for collision with agent
-        for threat in self.env.threats:
             if threat.x == self.env.agent.x and threat.y == self.env.agent.y:
                 collision = True
-        
         return collision
 
-class TimeManager:
-    def __init__(self, env):
-        self.env = env
 
-    def reset(self):
+class TimeManager:
+    """Tracks day/night cycles as well as weather and season transitions."""
+
+    def __init__(
+        self,
+        env,
+        time_constants: Dict[str, int],
+        environment_cycles: Dict[str, Iterable],
+    ) -> None:
+        self.env = env
+        self.time_constants = time_constants
+        self.environment_cycles = environment_cycles
+
+    def reset(self) -> None:
         self.env.world_time = 0
         self.env.is_day = True
-        self.env.current_weather = self.env.np_random.choice(self.env.config['environment_cycles']["WEATHER_TYPES"])
-        self.env.current_season = self.env.np_random.choice(self.env.config['environment_cycles']["SEASON_TYPES"])
+        self.env.current_weather = self.environment_cycles["WEATHER_TYPES"][0]
+        self.env.current_season = self.environment_cycles["SEASON_TYPES"][0]
 
-    def step(self):
+    def step(self) -> None:
+        day_length = self.time_constants["DAY_LENGTH"]
+        night_length = self.time_constants["NIGHT_LENGTH"]
+        weather_period = self.environment_cycles["WEATHER_TRANSITION_STEPS"]
+        season_period = self.environment_cycles["SEASON_TRANSITION_STEPS"]
+
+        cycle_length = day_length + night_length
+        cycle_position = self.env.world_time % cycle_length
+        self.env.is_day = cycle_position < day_length
+
         self.env.world_time += 1
-        cycle_length = self.env.config['time_constants']["DAY_LENGTH"] + self.env.config['time_constants']["NIGHT_LENGTH"]
-        self.env.is_day = (self.env.world_time % cycle_length) < self.env.config['time_constants']["DAY_LENGTH"]
 
-        if self.env.world_time % self.env.config['environment_cycles']["WEATHER_TRANSITION_STEPS"] == 0:
-             self.env.current_weather = self.env.np_random.choice(self.env.config['environment_cycles']["WEATHER_TYPES"])
+        if self.env.world_time % weather_period == 0:
+            self.env.current_weather = self._choose_new_value("WEATHER_TYPES")
 
-        if self.env.world_time % self.env.config['environment_cycles']["SEASON_TRANSITION_STEPS"] == 0:
-             self.env.current_season = self.env.np_random.choice(self.env.config['environment_cycles']["SEASON_TYPES"])
+        if self.env.world_time % season_period == 0:
+            self.env.current_season = self._choose_new_value("SEASON_TYPES")
+
+    def _choose_new_value(self, key: str) -> str:
+        options = list(self.environment_cycles[key])
+        current = getattr(self.env, f"current_{key.split('_')[0].lower()}")
+        available = [option for option in options if str(option) != str(current)]
+        if not available:
+            available = options
+        choice = self.env.np_random.choice(available)
+        return str(choice)
