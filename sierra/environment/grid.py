@@ -1,41 +1,63 @@
+"""Utility helpers for working with the grid representation."""
+
+from __future__ import annotations
+
+from typing import Iterable, Tuple
+
 import numpy as np
 
-# Define constants for cell types
 EMPTY = 0
-WALL = 1
-AGENT = 2
-RESOURCE = 3
-THREAT = 4
+AGENT = 1
+RESOURCE = 2
+THREAT = 3
 
-# Terrain Types
 PLAINS = 0
 FOREST = 1
 ROCKY = 2
 
-def create_grid(width, height):
-    """Creates a new grid of specified dimensions."""
+
+def create_grid(width: int, height: int) -> np.SimpleArray:
     return np.full((height, width), EMPTY, dtype=int)
 
-def place_entity(grid, entity, cell_type, x=None, y=None):
-    """Places an entity (agent or resource) on the grid.
-    If x and y are provided, they are used as the entity's new coordinates.
-    Otherwise, entity.x and entity.y are used.
-    """
-    target_x = x if x is not None else entity.x
-    target_y = y if y is not None else entity.y
 
-    if check_boundaries(grid, target_x, target_y):
-        grid[target_y, target_x] = cell_type
-        return True
-    return False
-
-def check_boundaries(grid, x, y):
-    """Checks if the given coordinates are within grid boundaries."""
+def check_boundaries(grid: np.SimpleArray, x: int, y: int) -> bool:
     height, width = grid.shape
     return 0 <= x < width and 0 <= y < height
 
-def get_cell_content(grid, x, y):
-    """Gets the content of the cell at the given coordinates."""
-    if check_boundaries(grid, x, y):
-        return grid[y, x]
-    return None # Or raise an error, depending on desired behavior
+
+def place_entity(grid: np.SimpleArray, entity, cell_type: int, x: int | None = None, y: int | None = None) -> bool:
+    target_x = entity.x if x is None else x
+    target_y = entity.y if y is None else y
+    if not check_boundaries(grid, target_x, target_y):
+        return False
+    grid[target_y, target_x] = cell_type
+    entity.x, entity.y = target_x, target_y
+    return True
+
+
+def get_cell_content(grid: np.SimpleArray, x: int, y: int) -> int | None:
+    if not check_boundaries(grid, x, y):
+        return None
+    return grid[y, x]
+
+
+def iter_coordinates(width: int, height: int) -> Iterable[Tuple[int, int]]:
+    for y in range(height):
+        for x in range(width):
+            yield (x, y)
+
+
+__all__ = [
+    "EMPTY",
+    "AGENT",
+    "RESOURCE",
+    "THREAT",
+    "PLAINS",
+    "FOREST",
+    "ROCKY",
+    "create_grid",
+    "place_entity",
+    "check_boundaries",
+    "get_cell_content",
+    "iter_coordinates",
+]
