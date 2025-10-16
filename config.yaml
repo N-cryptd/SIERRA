@@ -25,21 +25,11 @@ inventory_constants:
 # --- Crafting System ---
 crafting:
   recipes:
-    # Intermediate Components
-    plank: { wood: 1 }
-    shelter_frame: { plank: 4, stone: 2 }
-
-    # Final Items
-    basic_shelter: { shelter_frame: 1, cloth: 2 }
+    basic_shelter: { wood: 4, stone: 2 }
     water_filter: { charcoal: 2, cloth: 1, stone: 1 }
     crude_axe: { stone: 2, wood: 1 }
 
   rewards:
-    # Give small rewards for crafting components to guide the agent
-    plank: 0.1
-    shelter_frame: 1.0
-    
-    # Final item rewards
     basic_shelter: 10.0 # Increased reward for the more complex process
     water_filter: 0.5
     crude_axe: 1.0
