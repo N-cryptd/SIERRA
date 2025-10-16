@@ -1,30 +1,49 @@
 # Attempt to import constants. If this causes issues, they might need to be passed or defined locally.
 # For now, let's assume these can be imported after core.py is also updated,
 # or we use placeholders if direct import fails during testing.
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
 try:
-    from sierra.environment.core import INVENTORY_CONSTANTS, GAMEPLAY_CONSTANTS
-    # Define defaults if specific keys are missing, as per instructions
-    INITIAL_HUNGER = GAMEPLAY_CONSTANTS.get('INITIAL_HUNGER', 100.0)
-    INITIAL_THIRST = GAMEPLAY_CONSTANTS.get('INITIAL_THIRST', 100.0)
-    MAX_THIRST = GAMEPLAY_CONSTANTS.get('MAX_THIRST', 100.0) # Assuming max hunger is also 100 implicitly
-    MAX_HUNGER = GAMEPLAY_CONSTANTS.get('MAX_HUNGER', 100.0)
-
-    # Decay constants - these should ideally be in GAMEPLAY_CONSTANTS too
-    BASE_DECAY = GAMEPLAY_CONSTANTS.get('BASE_DECAY', 0.1)
-    SHELTER_MULTIPLIER = GAMEPLAY_CONSTANTS.get('SHELTER_MULTIPLIER', 0.75)
-    NIGHT_MULTIPLIER = GAMEPLAY_CONSTANTS.get('NIGHT_MULTIPLIER', 1.2)
-    NIGHT_NO_SHELTER_EXTRA_MULTIPLIER = GAMEPLAY_CONSTANTS.get('NIGHT_NO_SHELTER_EXTRA_MULTIPLIER', 1.5)
-
-except ImportError: # Fallback if core.py isn't structured yet or causes circular import
+    from sierra.environment.core import GAMEPLAY_CONSTANTS, INVENTORY_CONSTANTS
+except ImportError:  # pragma: no cover - fallback for circular import issues during development
     INVENTORY_CONSTANTS = {"MAX_INVENTORY_PER_ITEM": 10, "MAX_WATER_FILTERS": 5}
-    INITIAL_HUNGER = 100.0
-    INITIAL_THIRST = 100.0
-    MAX_THIRST = 100.0
-    MAX_HUNGER = 100.0
-    BASE_DECAY = 0.1
-    SHELTER_MULTIPLIER = 0.75
-    NIGHT_MULTIPLIER = 1.2
-    NIGHT_NO_SHELTER_EXTRA_MULTIPLIER = 1.5
+    GAMEPLAY_CONSTANTS = {
+        "INITIAL_HUNGER": 100.0,
+        "INITIAL_THIRST": 100.0,
+        "MAX_THIRST": 100.0,
+        "MAX_HUNGER": 100.0,
+        "BASE_DECAY": 0.1,
+        "SHELTER_MULTIPLIER": 0.75,
+        "NIGHT_MULTIPLIER": 1.2,
+        "NIGHT_NO_SHELTER_EXTRA_MULTIPLIER": 1.5,
+    }
+
+
+def _get_decay_constants(decay_config: Mapping[str, Any] | None = None) -> dict[str, float]:
+    """Resolve decay constants from gameplay configuration with overrides."""
+
+    base = {
+        "BASE_DECAY": GAMEPLAY_CONSTANTS.get("BASE_DECAY", 0.1),
+        "SHELTER_MULTIPLIER": GAMEPLAY_CONSTANTS.get("SHELTER_MULTIPLIER", 0.75),
+        "NIGHT_MULTIPLIER": GAMEPLAY_CONSTANTS.get("NIGHT_MULTIPLIER", 1.2),
+        "NIGHT_NO_SHELTER_EXTRA_MULTIPLIER": GAMEPLAY_CONSTANTS.get(
+            "NIGHT_NO_SHELTER_EXTRA_MULTIPLIER", 1.5
+        ),
+    }
+    if decay_config:
+        for key in base:
+            if key in decay_config:
+                base[key] = float(decay_config[key])
+    return base
+
+
+INITIAL_HUNGER = GAMEPLAY_CONSTANTS.get("INITIAL_HUNGER", 100.0)
+INITIAL_THIRST = GAMEPLAY_CONSTANTS.get("INITIAL_THIRST", 100.0)
+MAX_THIRST = GAMEPLAY_CONSTANTS.get("MAX_THIRST", 100.0)
+MAX_HUNGER = GAMEPLAY_CONSTANTS.get("MAX_HUNGER", 100.0)
 
 
 class Agent:
@@ -36,7 +55,7 @@ class Agent:
         self.thirst = INITIAL_THIRST if thirst is None else thirst
         self.inventory = {material: 0 for material in Resource.MATERIAL_TYPES}
         self.has_shelter = False
-        self.has_axe = False
+        self._has_axe = False
         self.axe_durability = 0
         self.stamina = 100
         self.water_filters_available = 0
@@ -74,20 +93,26 @@ class Agent:
         return self.inventory.get(item_type, 0)
 
     # --- Needs Management ---
-    def update_needs(self, is_day: bool, environment_has_shelter_effect: bool): # environment_has_shelter_effect is self.has_shelter
-        hunger_decay_rate = BASE_DECAY
-        thirst_decay_rate = BASE_DECAY
+    def update_needs(
+        self,
+        is_day: bool,
+        environment_has_shelter_effect: bool,
+        decay_overrides: Mapping[str, Any] | None = None,
+    ) -> None:  # environment_has_shelter_effect is self.has_shelter
+        decay_constants = _get_decay_constants(decay_overrides)
+        hunger_decay_rate = decay_constants["BASE_DECAY"]
+        thirst_decay_rate = decay_constants["BASE_DECAY"]
 
         if environment_has_shelter_effect: # Agent is benefiting from its shelter
-            hunger_decay_rate *= SHELTER_MULTIPLIER
-            thirst_decay_rate *= SHELTER_MULTIPLIER
+            hunger_decay_rate *= decay_constants["SHELTER_MULTIPLIER"]
+            thirst_decay_rate *= decay_constants["SHELTER_MULTIPLIER"]
 
         if not is_day: # Night effect
-            hunger_decay_rate *= NIGHT_MULTIPLIER
-            thirst_decay_rate *= NIGHT_MULTIPLIER
+            hunger_decay_rate *= decay_constants["NIGHT_MULTIPLIER"]
+            thirst_decay_rate *= decay_constants["NIGHT_MULTIPLIER"]
             if not environment_has_shelter_effect: # Additional penalty if no shelter at night
-                 hunger_decay_rate *= NIGHT_NO_SHELTER_EXTRA_MULTIPLIER
-                 thirst_decay_rate *= NIGHT_NO_SHELTER_EXTRA_MULTIPLIER
+                hunger_decay_rate *= decay_constants["NIGHT_NO_SHELTER_EXTRA_MULTIPLIER"]
+                thirst_decay_rate *= decay_constants["NIGHT_NO_SHELTER_EXTRA_MULTIPLIER"]
         
         self.hunger = max(0.0, self.hunger - hunger_decay_rate)
         self.thirst = max(0.0, self.thirst - thirst_decay_rate)
@@ -107,8 +132,6 @@ class Agent:
 
     def set_has_axe(self, value: bool):
         self.has_axe = value
-        if value:
-            self.axe_durability = 100
 
     def add_water_filter(self, count: int = 1) -> bool:
         if self.water_filters_available < INVENTORY_CONSTANTS['MAX_WATER_FILTERS']:
@@ -124,6 +147,19 @@ class Agent:
             self.water_filters_available -= 1
             return True
         return False
+
+    @property
+    def has_axe(self) -> bool:
+        return self._has_axe
+
+    @has_axe.setter
+    def has_axe(self, value: bool) -> None:
+        self._has_axe = value
+        if value:
+            if self.axe_durability <= 0:
+                self.axe_durability = GAMEPLAY_CONSTANTS.get('AXE_DURABILITY', 100)
+        else:
+            self.axe_durability = 0
 
 class Resource:
     """Represents a resource in the environment."""
@@ -144,3 +180,4 @@ class Threat:
         self.y = y
         self.state = "PATROLLING"
         self.target = None
+        self.type = "threat"

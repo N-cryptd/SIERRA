@@ -30,7 +30,7 @@ crafting:
     shelter_frame: { plank: 4, stone: 2 }
 
     # Final Items
-    basic_shelter: { shelter_frame: 1, cloth: 2 }
+    basic_shelter: { wood: 4, stone: 2 }
     water_filter: { charcoal: 2, cloth: 1, stone: 1 }
     crude_axe: { stone: 2, wood: 1 }
 

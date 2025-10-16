@@ -5,7 +5,7 @@ EMPTY = 0
 WALL = 1
 AGENT = 2
 RESOURCE = 3
-THREAT = 4
+THREAT = 3
 
 # Terrain Types
 PLAINS = 0

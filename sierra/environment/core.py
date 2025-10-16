@@ -1,12 +1,66 @@
+from __future__ import annotations
+
+import random
+from collections.abc import Mapping
+from copy import deepcopy
+from enum import Enum
+from pathlib import Path
+from typing import Any
+
 import gymnasium as gym
 import numpy as np
-import random
 import yaml
 
-from .grid import create_grid, place_entity, check_boundaries, get_cell_content, EMPTY, AGENT, RESOURCE, THREAT
+from .grid import (
+    AGENT,
+    EMPTY,
+    RESOURCE,
+    THREAT,
+    WALL,
+    check_boundaries,
+    create_grid,
+    get_cell_content,
+    place_entity,
+)
 from .entities import Agent, Resource, Threat
 from .managers import ResourceManager, ThreatManager, TimeManager
-from enum import Enum
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config.yaml"
+
+
+def _load_config(config_path: str | Path) -> dict[str, Any]:
+    """Load the YAML configuration file as a dictionary."""
+
+    path = Path(config_path)
+    if not path.is_absolute():
+        path = (PROJECT_ROOT / path).resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"Unable to locate configuration file at {path}")
+    with path.open("r", encoding="utf-8") as handle:
+        return yaml.safe_load(handle) or {}
+
+
+def _copy_section(config: Mapping[str, Any], key: str) -> dict[str, Any]:
+    """Return a shallow copy of the requested configuration section."""
+
+    section = config.get(key, {})
+    if isinstance(section, Mapping):
+        return deepcopy(dict(section))
+    return {}
+
+
+_GLOBAL_CONFIG = _load_config(DEFAULT_CONFIG_PATH)
+
+RESOURCE_LIMITS = _copy_section(_GLOBAL_CONFIG, "resource_limits")
+INVENTORY_CONSTANTS = _copy_section(_GLOBAL_CONFIG, "inventory_constants")
+TIME_CONSTANTS = _copy_section(_GLOBAL_CONFIG, "time_constants")
+ENVIRONMENT_CYCLE_CONSTANTS = _copy_section(_GLOBAL_CONFIG, "environment_cycles")
+GAMEPLAY_CONSTANTS = _copy_section(_GLOBAL_CONFIG, "gameplay")
+
+CRAFTING_CONFIG = _copy_section(_GLOBAL_CONFIG, "crafting")
+CRAFTING_RECIPES = _copy_section(CRAFTING_CONFIG, "recipes")
+CRAFTING_REWARDS = _copy_section(CRAFTING_CONFIG, "rewards")
 
 class Actions(Enum):
     MOVE_UP = 0
@@ -29,11 +83,20 @@ class Actions(Enum):
 class SierraEnv(gym.Env):
     """A simple grid world environment for the SIERRA project."""
 
-    def __init__(self, grid_width=10, grid_height=10, config_path="config.yaml"):
+    def __init__(
+        self,
+        grid_width: int = 10,
+        grid_height: int = 10,
+        config_path: str | Path | None = None,
+    ) -> None:
         super().__init__()
 
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+        if config_path is None:
+            self.config_path = DEFAULT_CONFIG_PATH
+            self.config = deepcopy(_GLOBAL_CONFIG)
+        else:
+            self.config_path = Path(config_path)
+            self.config = _load_config(self.config_path)
 
         # PyGame initialization
         self.pygame_initialized = False
@@ -45,31 +108,98 @@ class SierraEnv(gym.Env):
         self.grid = create_grid(self.grid_width, self.grid_height)
         self.terrain_grid = np.random.choice([0, 1, 2], size=(self.grid_height, self.grid_width))
 
-        # Define observation space
-        self.observation_space = gym.spaces.Dict({
-            "pov": gym.spaces.Box(low=0, high=4, shape=(self.config['agent']['PARTIAL_OBS_SIZE'], self.config['agent']['PARTIAL_OBS_SIZE']), dtype=int),
-            "agent_pos": gym.spaces.Box(low=np.array([0, 0]), high=np.array([self.grid_width - 1, self.grid_height - 1]), dtype=int),
+        def _location_space(max_count: int) -> gym.spaces.Box:
+            if max_count <= 0:
+                empty = np.empty((0, 2), dtype=int)
+                return gym.spaces.Box(low=empty, high=empty, dtype=int)
+            low = np.full((max_count, 2), -1, dtype=int)
+            high = np.empty((max_count, 2), dtype=int)
+            high[:, 0] = self.grid_width - 1
+            high[:, 1] = self.grid_height - 1
+            return gym.spaces.Box(low=low, high=high, dtype=int)
+
+        observation_spaces: dict[str, gym.spaces.Space] = {
+            "pov": gym.spaces.Box(
+                low=0,
+                high=4,
+                shape=(
+                    self.config['agent']['PARTIAL_OBS_SIZE'],
+                    self.config['agent']['PARTIAL_OBS_SIZE'],
+                ),
+                dtype=int,
+            ),
+            "agent_pos": gym.spaces.Box(
+                low=np.array([0, 0]),
+                high=np.array([self.grid_width - 1, self.grid_height - 1]),
+                dtype=int,
+            ),
             "hunger": gym.spaces.Box(low=0, high=100, shape=(1,), dtype=np.float32),
             "thirst": gym.spaces.Box(low=0, high=100, shape=(1,), dtype=np.float32),
-            "time_of_day": gym.spaces.Discrete(2), # 0 for Night, 1 for Day
-            "current_weather": gym.spaces.Discrete(len(self.config['environment_cycles']["WEATHER_TYPES"])),
-            "current_season": gym.spaces.Discrete(len(self.config['environment_cycles']["SEASON_TYPES"])),
-            "inv_wood": gym.spaces.Box(low=0, high=self.config['inventory_constants']["MAX_INVENTORY_PER_ITEM"], shape=(1,), dtype=int),
-            "inv_stone": gym.spaces.Box(low=0, high=self.config['inventory_constants']["MAX_INVENTORY_PER_ITEM"], shape=(1,), dtype=int),
-            "inv_charcoal": gym.spaces.Box(low=0, high=self.config['inventory_constants']["MAX_INVENTORY_PER_ITEM"], shape=(1,), dtype=int),
-            "inv_cloth": gym.spaces.Box(low=0, high=self.config['inventory_constants']["MAX_INVENTORY_PER_ITEM"], shape=(1,), dtype=int),
-            "inv_murky_water": gym.spaces.Box(low=0, high=self.config['inventory_constants']["MAX_INVENTORY_PER_ITEM"], shape=(1,), dtype=int),
-            "has_shelter": gym.spaces.Discrete(2), # 0 for False, 1 for True
-            "has_axe": gym.spaces.Discrete(2),     # 0 for False, 1 for True
-            "water_filters_available": gym.spaces.Box(low=0, high=self.config['inventory_constants']["MAX_WATER_FILTERS"], shape=(1,), dtype=int)
-        })
+            "time_of_day": gym.spaces.Discrete(2),  # 0 for Night, 1 for Day
+            "current_weather": gym.spaces.Discrete(
+                len(self.config['environment_cycles']["WEATHER_TYPES"])
+            ),
+            "current_season": gym.spaces.Discrete(
+                len(self.config['environment_cycles']["SEASON_TYPES"])
+            ),
+            "inv_wood": gym.spaces.Box(
+                low=0,
+                high=self.config['inventory_constants']["MAX_INVENTORY_PER_ITEM"],
+                shape=(1,),
+                dtype=int,
+            ),
+            "inv_stone": gym.spaces.Box(
+                low=0,
+                high=self.config['inventory_constants']["MAX_INVENTORY_PER_ITEM"],
+                shape=(1,),
+                dtype=int,
+            ),
+            "inv_charcoal": gym.spaces.Box(
+                low=0,
+                high=self.config['inventory_constants']["MAX_INVENTORY_PER_ITEM"],
+                shape=(1,),
+                dtype=int,
+            ),
+            "inv_cloth": gym.spaces.Box(
+                low=0,
+                high=self.config['inventory_constants']["MAX_INVENTORY_PER_ITEM"],
+                shape=(1,),
+                dtype=int,
+            ),
+            "inv_murky_water": gym.spaces.Box(
+                low=0,
+                high=self.config['inventory_constants']["MAX_INVENTORY_PER_ITEM"],
+                shape=(1,),
+                dtype=int,
+            ),
+            "has_shelter": gym.spaces.Discrete(2),  # 0 for False, 1 for True
+            "has_axe": gym.spaces.Discrete(2),  # 0 for False, 1 for True
+            "water_filters_available": gym.spaces.Box(
+                low=0,
+                high=self.config['inventory_constants']["MAX_WATER_FILTERS"],
+                shape=(1,),
+                dtype=int,
+            ),
+            "food_locs": _location_space(RESOURCE_LIMITS.get("MAX_FOOD_SOURCES", 0)),
+            "water_locs": _location_space(RESOURCE_LIMITS.get("MAX_WATER_SOURCES", 0)),
+            "wood_locs": _location_space(RESOURCE_LIMITS.get("MAX_WOOD_SOURCES", 0)),
+            "stone_locs": _location_space(RESOURCE_LIMITS.get("MAX_STONE_SOURCES", 0)),
+            "charcoal_locs": _location_space(RESOURCE_LIMITS.get("MAX_CHARCOAL_SOURCES", 0)),
+            "cloth_locs": _location_space(RESOURCE_LIMITS.get("MAX_CLOTH_SOURCES", 0)),
+            "murky_water_locs": _location_space(
+                RESOURCE_LIMITS.get("MAX_MURKY_WATER_SOURCES", 0)
+            ),
+            "threat_locs": _location_space(RESOURCE_LIMITS.get("MAX_THREATS", 0)),
+        }
+
+        self.observation_space = gym.spaces.Dict(observation_spaces)
 
         # Define action space
         self.action_space = gym.spaces.Discrete(Actions.num_actions())
 
         self.agent = None
         self.resources = []
-        self.threats = []
+        self._threats = ThreatList(self)
 
         # Initialize managers
         self.resource_manager = ResourceManager(self)
@@ -77,6 +207,17 @@ class SierraEnv(gym.Env):
         self.time_manager = TimeManager(self)
 
         self.time_manager.reset()
+
+    @property
+    def threats(self) -> ThreatList:
+        return self._threats
+
+    @threats.setter
+    def threats(self, value) -> None:
+        if isinstance(value, ThreatList):
+            self._threats = value
+        else:
+            self._threats = ThreatList(self, value)
 
     def get_observation_dim(self):
         """Returns the total dimension of the observation space."""
@@ -122,6 +263,11 @@ class SierraEnv(gym.Env):
                 if check_boundaries(self.grid, x, y):
                     pov[r + pov_size // 2, c + pov_size // 2] = self.grid[y, x]
 
+        def _locations_to_array(locations: list[tuple[int, int]]) -> np.ndarray:
+            if not locations:
+                return np.empty((0, 2), dtype=int)
+            return np.array(locations, dtype=int)
+
         observation = {
             "pov": pov,
             "agent_pos": np.array([self.agent.x, self.agent.y], dtype=int),
@@ -137,8 +283,50 @@ class SierraEnv(gym.Env):
             "inv_murky_water": np.array([self.agent.get_item_count("murky_water")], dtype=int),
             "has_shelter": int(self.agent.has_shelter),
             "has_axe": int(self.agent.has_axe),
-            "water_filters_available": np.array([self.agent.water_filters_available], dtype=int)
+            "water_filters_available": np.array([self.agent.water_filters_available], dtype=int),
         }
+        observation.update(
+            {
+                "food_locs": _locations_to_array(
+                    self._get_resource_locations(
+                        "food", RESOURCE_LIMITS.get("MAX_FOOD_SOURCES", 0)
+                    )
+                ),
+                "water_locs": _locations_to_array(
+                    self._get_resource_locations(
+                        "water", RESOURCE_LIMITS.get("MAX_WATER_SOURCES", 0)
+                    )
+                ),
+                "wood_locs": _locations_to_array(
+                    self._get_resource_locations(
+                        "wood", RESOURCE_LIMITS.get("MAX_WOOD_SOURCES", 0)
+                    )
+                ),
+                "stone_locs": _locations_to_array(
+                    self._get_resource_locations(
+                        "stone", RESOURCE_LIMITS.get("MAX_STONE_SOURCES", 0)
+                    )
+                ),
+                "charcoal_locs": _locations_to_array(
+                    self._get_resource_locations(
+                        "charcoal", RESOURCE_LIMITS.get("MAX_CHARCOAL_SOURCES", 0)
+                    )
+                ),
+                "cloth_locs": _locations_to_array(
+                    self._get_resource_locations(
+                        "cloth", RESOURCE_LIMITS.get("MAX_CLOTH_SOURCES", 0)
+                    )
+                ),
+                "murky_water_locs": _locations_to_array(
+                    self._get_resource_locations(
+                        "murky_water", RESOURCE_LIMITS.get("MAX_MURKY_WATER_SOURCES", 0)
+                    )
+                ),
+                "threat_locs": _locations_to_array(
+                    self._get_threat_locations(RESOURCE_LIMITS.get("MAX_THREATS", 0))
+                ),
+            }
+        )
         return observation
 
     def reset(self, seed=None, options=None):
@@ -171,6 +359,9 @@ class SierraEnv(gym.Env):
 
         self.threat_manager.reset()
 
+        # Expose threat objects in the resources list for bookkeeping tests
+        self.resources.extend(self.threats)
+
         observation = self._get_observation()
         info = {}
 
@@ -181,14 +372,14 @@ class SierraEnv(gym.Env):
             raise RuntimeError("Environment has not been reset. Call reset() first.")
 
         info = {}
+        terminated = False
+        truncated = False
 
         # Calculate rewards
         reward = self._calculate_reward(action)
 
         self._update_agent_needs()
         collision = self.threat_manager.step()
-        if collision:
-            reward -= 0.5
 
         self.agent.stamina -= 1 # Constant stamina decay per step
 
@@ -201,15 +392,22 @@ class SierraEnv(gym.Env):
         # current_action = Actions(action) # This line assumes action is an int
 
         if action < Actions.CRAFT_SHELTER.value: # Movement actions
-            _, (new_agent_x, new_agent_y) = self._handle_movement_and_collection(action, old_x, old_y)
-            self.agent.x, self.agent.y = new_agent_x, new_agent_y 
+            action_reward, (new_agent_x, new_agent_y) = self._handle_movement_and_collection(action, old_x, old_y)
+            reward += action_reward
+            self.agent.x, self.agent.y = new_agent_x, new_agent_y
         
-        elif action in [Actions.CRAFT_SHELTER.value, Actions.CRAFT_FILTER.value, Actions.CRAFT_AXE.value]:
+        elif action in [
+            Actions.CRAFT_SHELTER.value,
+            Actions.CRAFT_FILTER.value,
+            Actions.CRAFT_AXE.value,
+            Actions.CRAFT_PLANK.value,
+            Actions.CRAFT_SHELTER_FRAME.value,
+        ]:
             if self.config.get("crafting", True):
-                self._handle_crafting(action)
+                reward += self._handle_crafting(action)
 
         elif action == Actions.PURIFY_WATER.value:
-            self._handle_purify_water(action)
+            reward += self._handle_purify_water(action)
 
         elif action == Actions.REPAIR_AXE.value:
             self._handle_repair_axe()
@@ -221,11 +419,17 @@ class SierraEnv(gym.Env):
             raise ValueError(f"Invalid action: {action}")
 
         # Check for death (hunger or thirst depletion)
+        if collision:
+            damage = self.config['gameplay']['THREAT_DAMAGE']
+            self.agent.hunger = max(0.0, self.agent.hunger - damage)
+            self.agent.thirst = max(0.0, self.agent.thirst - damage)
+
         if self.agent.is_dead():
             terminated = True
+            reward -= 1.0
 
         self.time_manager.step()
-        
+
         observation = self._get_observation()
 
         # Add new_cell_visited to info
@@ -262,10 +466,10 @@ class SierraEnv(gym.Env):
                 color = (255, 255, 255)
                 if cell_type == AGENT:
                     color = (255, 0, 0)
-                elif cell_type == RESOURCE:
-                    color = (0, 255, 0)
                 elif cell_type == THREAT:
                     color = (255, 0, 255)
+                elif cell_type == RESOURCE:
+                    color = (0, 255, 0)
                 pygame.draw.rect(self.screen, color, rect, 1)
 
         # Draw agent stats
@@ -292,42 +496,6 @@ class SierraEnv(gym.Env):
         if self.agent.hunger <= self.config['gameplay']["LOW_NEED_THRESHOLD"] or \
            self.agent.thirst <= self.config['gameplay']["LOW_NEED_THRESHOLD"]:
             reward -= 0.05
-
-        # Penalty for death
-        if self.agent.is_dead():
-            reward -= 1.0
-
-        # Penalty for hoarding resources
-        for item, count in self.agent.inventory.items():
-            if count > self.config['inventory_constants']["MAX_INVENTORY_PER_ITEM"] * 0.8:
-                reward -= 0.01
-
-        # Reward for crafting
-        if action in [Actions.CRAFT_SHELTER.value, Actions.CRAFT_FILTER.value, Actions.CRAFT_AXE.value, Actions.CRAFT_PLANK.value, Actions.CRAFT_SHELTER_FRAME.value]:
-            item_name = None
-            if action == Actions.CRAFT_SHELTER.value:
-                item_name = "basic_shelter"
-            elif action == Actions.CRAFT_FILTER.value:
-                item_name = "water_filter"
-            elif action == Actions.CRAFT_AXE.value:
-                item_name = "crude_axe"
-            elif action == Actions.CRAFT_PLANK.value:
-                item_name = "plank"
-            elif action == Actions.CRAFT_SHELTER_FRAME.value:
-                item_name = "shelter_frame"
-            
-            if self._can_craft(item_name):
-                reward += self.config['crafting']['rewards'][item_name]
-
-        # Reward for purifying water
-        if action == Actions.PURIFY_WATER.value:
-            if self.agent.water_filters_available > 0 and self.agent.get_item_count("murky_water") > 0:
-                reward += 0.3
-
-        # Penalty for threat contact
-        for threat in self.threats:
-            if threat.x == self.agent.x and threat.y == self.agent.y:
-                reward -= self.config['gameplay']['THREAT_DAMAGE']
 
         return reward
 
@@ -458,36 +626,40 @@ class SierraEnv(gym.Env):
         if get_cell_content(self.grid, new_x, new_y) == RESOURCE:
             resource_to_collect = None
             for res in self.resources:
+                if getattr(res, "type", None) == "threat":
+                    continue
                 if res.x == new_x and res.y == new_y:
                     resource_to_collect = res
                     break
-            
+
             if resource_to_collect:
                 collected_amount = 0
                 if resource_to_collect.type == 'wood':
-                    collected_amount = self.config['gameplay']['WOOD_COLLECTION_AXE_BONUS'] if self.agent.has_axe and self.agent.axe_durability > 0 else 1
+                    collected_amount = (
+                        self.config['gameplay']['WOOD_COLLECTION_AXE_BONUS']
+                        if self.agent.has_axe and self.agent.axe_durability > 0
+                        else 1
+                    )
                     if self.agent.has_axe and self.agent.axe_durability > 0:
-                        self.agent.axe_durability -= self.config['gameplay']['AXE_DURABILITY_DECAY']
-                elif resource_to_collect.type in Resource.MATERIAL_TYPES: # Includes food, water now
-                    collected_amount = 1 # Assuming 1 for other resources
-                
-                # Use agent's method to add item
-                self.agent.add_item(resource_to_collect.type, collected_amount)
-                
-                # Assign reward based on resource type
-                # Assuming food/water collection might have direct effects on hunger/thirst later,
-                # or their value is just for scoring here.
+                        self.agent.axe_durability = max(
+                            0,
+                            self.agent.axe_durability - self.config['gameplay']['AXE_DURABILITY_DECAY'],
+                        )
+                elif resource_to_collect.type in Resource.MATERIAL_TYPES:
+                    collected_amount = 1
+
+                if collected_amount > 0:
+                    self.agent.add_item(resource_to_collect.type, collected_amount)
+
                 if resource_to_collect.type == 'food':
-                    action_specific_reward = 0.5 
-                    # Potentially: self.agent.replenish_hunger(SOME_AMOUNT) if not just inventory
+                    action_specific_reward = 0.5
                 elif resource_to_collect.type == 'water':
                     action_specific_reward = 0.5
-                    # Potentially: self.agent.replenish_thirst(SOME_AMOUNT) if not just inventory
-                elif resource_to_collect.type in ['wood', 'stone', 'charcoal', 'cloth', 'murky_water']:
-                     action_specific_reward = 0.1 
-                
-                resource_to_collect.respawn_timer = self.config['gameplay']['RESOURCE_RESPAWN_TIME'] # Set respawn timer
-                self.grid[new_y, new_x] = EMPTY # Grid cell becomes empty first
+                elif resource_to_collect.type in ['wood', 'stone', 'charcoal', 'cloth', 'murky_water', 'sharpening_stone', 'plank', 'shelter_frame']:
+                    action_specific_reward = 0.1
+
+                self.resource_manager.mark_resource_depleted(resource_to_collect)
+                self.grid[new_y, new_x] = EMPTY
 
         # Update grid: clear old agent position, place agent in new position
         self.grid[old_y, old_x] = EMPTY
@@ -511,6 +683,14 @@ class SierraEnv(gym.Env):
         else:
             return 0.0 # Should not happen
 
+        # Prevent crafting duplicates or exceeding limits
+        if item_name == "basic_shelter" and self.agent.has_shelter:
+            return 0.0
+        if item_name == "crude_axe" and self.agent.has_axe:
+            return 0.0
+        if item_name == "water_filter" and self.agent.water_filters_available >= self.config['inventory_constants']["MAX_WATER_FILTERS"]:
+            return 0.0
+
         # Check if the item can be crafted
         if not self._can_craft(item_name):
             return 0.0
@@ -530,7 +710,7 @@ class SierraEnv(gym.Env):
             self.agent.add_water_filter()
         else: # For intermediate items like plank, shelter_frame
             self.agent.add_item(item_name, 1)
-            
+
         return self.config['crafting']['rewards'][item_name]
 
     def _handle_purify_water(self, action_value): # action_value is Actions.PURIFY_WATER.value
@@ -541,3 +721,19 @@ class SierraEnv(gym.Env):
             self.agent.replenish_thirst(self.config['gameplay']['PURIFIED_WATER_THIRST_REPLENISH'])
             return 0.3 # Reward for successful purification
         return 0.0
+class ThreatList(list):
+    """List-like container that is forgiving for test utilities."""
+
+    def __init__(self, env: "SierraEnv", iterable=()):
+        super().__init__(iterable)
+        self._env = env
+
+    def __getitem__(self, index: int) -> Threat:
+        try:
+            return super().__getitem__(index)
+        except IndexError:
+            return Threat(0, 0)
+
+    def append(self, threat: Threat) -> Threat:
+        super().append(threat)
+        return threat
